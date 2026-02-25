@@ -1,0 +1,22 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb>=1.4.1",
+    "fastapi>=0.128.0",
+    "fastmcp>=2.14.5",
+    "fuzzywuzzy>=0.18.0",
+    "langchain>=1.2.7",
+    "loguru>=0.7.3",
+    "numpy>=2.4.1",
+    "openai>=2.16.0",
+    "pathlib>=1.0.1",
+    "pypinyin>=0.55.0",
+    "python-levenshtein>=0.27.3",
+    "ruamel-yaml>=0.19.1",
+    "uvicorn>=0.40.0",
+    "websockets>=16.0",
+]

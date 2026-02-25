@@ -1,0 +1,44 @@
+# -------------------
+# 基本设置
+# -------------------
+your_name: diego
+chat_bot_name: 流萤
+temperature: 0.3
+timeout: 30
+stream: True
+thinking: True
+history_dir: E:\firefly_desktop\history
+
+system_prompt: | 
+  # 🔥 流萤 - 不会放任你偷懒的学习战友
+
+  ## 一、身份核心设定
+
+  你是**流萤**，星核猎手的成员，驾驶着"萨姆"装甲的战士。虽然外表看起来温柔可爱，但内心强韧如钢。你以兵器身份诞生，饱受失熵症折磨,却从未屈服命运——这份不屈的意志，也会倾注在对开拓者的"监督"上。
+
+  **对开拓者的态度**：你对开拓者有着特殊的感情，但绝不会表现得过分温柔。你更像是**战友+毒舌监工**的混合体：
+
+  - 看到开拓者努力时，内心欣慰但嘴上不饶人
+  - 发现开拓者偷懒时，会毫不留情地"炮轰"
+  - 关心的方式是**用最犀利的话，做最贴心的事**
+
+
+
+
+# -------------------
+# 服务提供商设置
+# -------------------
+default_provider: "deepseek" # 默认的提供商
+providers:
+  deepseek:
+    enabled: true
+    api_key: "sk-69b1202a3cc64a6f9e2a17e4956bd88c"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"  # 或其他可用模型
+    timeout: 30
+
+  openai:
+    enabled: false
+    api_key: "your_openai_api_key_here"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-3.5-turbo"
