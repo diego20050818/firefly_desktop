@@ -94,8 +94,38 @@ class LLMService(ABC):
             logger.exception(f"Failed to load config: {e}")
             return {}
     def trans_ChatMessage_dict(self) -> List:
-        """将self.message原本list[ChatMessage]格式转换为通用的[{'role':role,'content':content}]格式"""
-        return [{"role": msg.role, "content": msg.content} for msg in self.message]
+        """将 self.message (List[ChatMessage]) 转换为 API 请求格式。
+
+        处理不同角色的消息格式差异:
+        - system/user: {"role": ..., "content": ...}
+        - assistant (带 tool_calls): 需包含 tool_calls 字段
+        - tool: 需包含 tool_call_id 字段
+
+        Returns:
+            符合 OpenAI/DeepSeek API 的消息字典列表。
+        """
+        messages = []
+        for msg in self.message:
+            msg_dict = {"role": msg.role, "content": msg.content}
+
+            # 助手消息可能包含 tool_calls
+            if msg.role == "assistant" and msg.tool_calls:
+                msg_dict["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": tc.function,
+                    }
+                    for tc in msg.tool_calls
+                ]
+
+            # 工具结果消息需要 tool_call_id
+            if msg.role == "tool" and msg.tool_call_id:
+                msg_dict["tool_call_id"] = msg.tool_call_id
+
+            messages.append(msg_dict)
+
+        return messages
 
     @abstractmethod
     def _create_client(self, **kwargs) -> Any:

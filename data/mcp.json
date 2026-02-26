@@ -1,0 +1,25 @@
+{
+    "mcpServers": {
+        "rednote": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "rednote-mcp",
+                "--stdio"
+            ]
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "@playwright/mcp@latest"
+            ]
+        },
+        "time":{
+            "command": "npx",
+            "args": [
+                "-y",
+                "time-mcp"
+            ]
+        }
+    }
+}
