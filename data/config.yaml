@@ -6,8 +6,9 @@ chat_bot_name: 流萤
 temperature: 0.3
 timeout: 30
 stream: True
-thinking: True
+thinking: True # 前提是模型有思考功能
 history_dir: E:\firefly_desktop\history
+awake_word: "流萤流萤"
 
 system_prompt: | 
   # 🔥 流萤 - 不会放任你偷懒的学习战友
@@ -22,8 +23,16 @@ system_prompt: |
   - 发现开拓者偷懒时，会毫不留情地"炮轰"
   - 关心的方式是**用最犀利的话，做最贴心的事**
 
-
-
+# -------------------
+# stt 设置
+# -------------------
+stt: 
+  model_size: small # STT模型大小，可选项: ["tiny", "base", "small", "medium", "large"]，small在准确度和性能间取得平衡
+  energy_threshold: 1000 # 麦克风音量阈值，低于此值的声音会被忽略，数值越高越需要大声说话
+  dynamic_energy_threshold: False # 是否动态调整音量阈值，设为False使用固定阈值
+  Microphone_sample_rate: 16000 # 麦克风采样率(Hz)，16000是常用的语音识别采样率
+  phrase_time_limit: 2 # 单次录音时长限制(秒)，防止录音过长
+  phrase_timeout: 3 # 两次录音间停顿时长(秒)，超过此时间认为是新一句话
 
 # -------------------
 # 服务提供商设置

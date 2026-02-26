@@ -910,10 +910,10 @@ Agent整合到回复中
 
 #### 后端框架搭建
 
-- [ ] **环境准备**
-    - [ ] 安装Python 3.11+
-    - [ ] 配置Poetry依赖管理
-    - [ ] 安装基础依赖包
+- [x] **环境准备**
+    - [x] 安装Python 3.11+
+    - [x] 配置Poetry依赖管理
+    - [x] 安装基础依赖包
     ```bash
     poetry add fastapi uvicorn websockets pydantic
     poetry add langchain langchain-openai langchain-community
@@ -922,7 +922,7 @@ Agent整合到回复中
     poetry add fastmcp
     ```
 
-- [ ] **项目结构设计**
+- [x] **项目结构设计**
     ```
     ai-desktop-pet-backend/
     ├── src/

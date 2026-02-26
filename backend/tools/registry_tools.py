@@ -107,13 +107,13 @@ class ToolRegistry:
             logger.warning(f"连接远程 MCP 服务器 {server_url} 失败: {e}")
             return []
 
-    def fetch_tools_from_local_mcp(self) -> List[ToolInfo]:
+    async def fetch_tools_from_local_mcp(self) -> List[ToolInfo]:
         """从本地 FastMCP 实例获取已注册的工具列表。
 
         直接导入 tools.launch_app 中的 FastMCP 实例，
-        遍历其内部工具管理器获取工具元信息。
+        通过其 list_tools() 异步方法获取工具元信息。
 
-        兼容 FastMCP 2.x 的多种内部 API 结构。
+        兼容 FastMCP 3.x 公共 API。
 
         Returns:
             本地注册的工具信息列表。
@@ -123,42 +123,44 @@ class ToolRegistry:
 
             tools = []
 
-            # 兼容 FastMCP 2.x 的内部 API
-            # 优先使用 _tool_manager._tools（FastMCP >= 2.x）
-            tool_dict = None
-            if hasattr(mcp, "_tool_manager") and hasattr(
-                mcp._tool_manager, "_tools"
-            ):
-                tool_dict = mcp._tool_manager._tools
+            # FastMCP 3.x 使用异步 list_tools()
+            if hasattr(mcp, "list_tools"):
+                try:
+                    # 尝试异步调用
+                    mcp_tools = await mcp.list_tools()
+                except Exception as e:
+                    logger.warning(f"调用 list_tools 失败: {e}, 尝试备选方案")
+                    mcp_tools = []
+            elif hasattr(mcp, "_tool_manager") and hasattr(mcp._tool_manager, "_tools"):
+                # 兼容旧版本
+                mcp_tools = mcp._tool_manager._tools.values()
             elif hasattr(mcp, "_tools"):
-                # 旧版 FastMCP 兼容
-                tool_dict = mcp._tools
+                mcp_tools = mcp._tools.values()
             else:
-                logger.warning(
-                    "无法访问 FastMCP 内部工具注册表，"
-                    "请检查 FastMCP 版本"
-                )
+                logger.warning("无法访问 FastMCP 工具注册表，请检查 FastMCP 版本")
                 return []
 
-            for tool_name, tool_obj in tool_dict.items():
-                # 获取工具描述和参数 schema
+            for tool_obj in mcp_tools:
+                # 获取工具元数据
+                # FastMCP 3.x 的 Tool 对象具有 name, description, parameters 属性
+                name = getattr(tool_obj, "name", "unknown")
                 description = getattr(tool_obj, "description", "") or ""
                 parameters = getattr(tool_obj, "parameters", None)
 
-                # 尝试多种方式获取 input_schema
+                # 兼容不同版本的参数获取
                 if parameters is None:
                     parameters = getattr(tool_obj, "input_schema", None)
                 if parameters is None:
                     parameters = {"type": "object", "properties": {}}
 
-                # 如果 parameters 是 Pydantic model，转换为 dict
+                # 处理 Pydantic 模型
                 if hasattr(parameters, "model_json_schema"):
                     parameters = parameters.model_json_schema()
                 elif hasattr(parameters, "schema"):
                     parameters = parameters.schema()
 
                 tool_info = ToolInfo(
-                    name=tool_name,
+                    name=name,
                     description=description,
                     parameters=parameters,
                 )
@@ -183,7 +185,7 @@ class ToolRegistry:
         all_tools = []
 
         # 1. 获取本地工具
-        local_tools = self.fetch_tools_from_local_mcp()
+        local_tools = await self.fetch_tools_from_local_mcp()
         all_tools.extend(local_tools)
 
         # 2. 获取 HTTP 远程工具

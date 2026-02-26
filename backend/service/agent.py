@@ -98,18 +98,27 @@ async def execute_tool_call(tool_call: ToolCall) -> str:
         # 1. 优先尝试从本地 FastMCP 注册表中查找
         from tools.launch_app import mcp as local_mcp
 
-        if func_name in local_mcp._tool_manager._tools:
-            tool_obj = local_mcp._tool_manager._tools[func_name]
+        # FastMCP 3.x 使用异步 get_tool()
+        tool_obj = None
+        if hasattr(local_mcp, "get_tool"):
+            try:
+                tool_obj = await local_mcp.get_tool(func_name)
+            except Exception as e:
+                logger.debug(f"get_tool({func_name}) 失败: {e}")
+        elif hasattr(local_mcp, "_tool_manager") and hasattr(local_mcp._tool_manager, "_tools"):
+            tool_obj = local_mcp._tool_manager._tools.get(func_name)
+
+        if tool_obj:
             # 调用 FastMCP 工具的 run 方法
             # 返回值是 ToolResult 对象，需要提取其中的文本内容
             tool_result = await tool_obj.run(arguments)
 
             # 从 ToolResult 中提取文本结果
+            # FastMCP 3.x 的 ToolResult 有 content 属性 (list of content items)
             if hasattr(tool_result, "content") and tool_result.content:
                 result_str = "\n".join(
-                    item.text
+                    getattr(item, "text", str(item))
                     for item in tool_result.content
-                    if hasattr(item, "text")
                 )
             else:
                 result_str = str(tool_result)

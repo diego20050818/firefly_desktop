@@ -18,6 +18,7 @@ from typing import Any, Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from loguru import logger
 from pydantic import BaseModel
 
@@ -25,8 +26,10 @@ from service.agent import ChatAgent
 from service.llm_register import get_provider_class
 from service.llm_service import ChatCompletionResponse
 from tools.registry_tools import tool_registry
+from voice.stt import STTService
 
-from contextlib import asynccontextmanager
+# ===================== 设置全局变量 =====================
+stt_service = STTService()
 
 # ===================== 应用初始化 =====================
 
@@ -41,6 +44,9 @@ async def lifespan(app: FastAPI):
         logger.info("系统启动：正在刷新全局工具注册表...")
         await tool_registry.get_all_tools()
         
+        # 初始化STT服务
+        logger.info("系统启动：正在初始化 STT 服务...")
+        
     except Exception as e:
         logger.error(f"MCP 初始化失败: {e}")
 
@@ -51,6 +57,11 @@ async def lifespan(app: FastAPI):
         from tools.stdio_mcp import stdio_mcp_manager
         logger.info("系统关闭：正在清理 MCP 服务器资源...")
         await stdio_mcp_manager.cleanup()
+        
+        # 停止STT服务
+        if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
+            start_stt.current_stt.stop_listening()
+            
     except Exception as e:
         logger.error(f"清理 MCP 资源失败: {e}")
 
@@ -417,3 +428,81 @@ def get_cached_tools() -> dict:
     """获取缓存的工具列表（不触发重新扫描）。"""
     tools = tool_registry.get_cached_tools()
     return {"tools": [tool.dict() for tool in tools]}
+
+@app.post("/stt/start")
+async def start_stt():
+    """开始语音转文字"""
+    global stt_service
+    
+    # 创建新的STT服务实例，避免并发问题
+    if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
+        start_stt.current_stt.stop_listening()
+    
+    start_stt.current_stt = STTService()
+    transcription_task = asyncio.create_task(start_stt.current_stt.start_listening())
+    
+    # 保存任务引用以便稍后访问
+    start_stt.task = transcription_task
+    
+    return {
+        "message": "语音识别已开始",
+        "status": "listening"
+    }
+
+
+@app.post("/stt/stop")
+async def stop_stt():
+    """停止语音转文字并返回结果"""
+    global stt_service
+    
+    if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
+        start_stt.current_stt.stop_listening()
+        
+        # 等待转录完成
+        result = start_stt.current_stt.get_transcription_result()
+        
+        return {
+            "transcription": result,
+            "status": "stopped"
+        }
+    
+    return {
+        "message": "没有活动的语音识别会话",
+        "status": "none"
+    }
+
+
+@app.post("/stt/transcribe")
+async def transcribe_audio(duration: int = 10):
+    """录音指定时间并返回转录结果（使用全局服务，避免重载模型）"""
+    result = await stt_service.start_listening(duration=duration, mode="continuous")
+    
+    return {
+        "transcription": result,
+        "duration": duration
+    }
+
+
+@app.post("/stt/transcribe_vad")
+async def transcribe_audio_vad():
+    """使用 VAD 智能检测说话和静默，捕获单次说话内容"""
+    result = await stt_service.start_listening(mode="vad")
+    
+    return {
+        "transcription": result,
+        "mode": "vad"
+    }
+
+
+@app.get("/stt/status")
+async def get_stt_status():
+    """获取当前STT服务状态"""
+    # 这里需要根据实际情况判断是否正在监听
+    is_active = False
+    if hasattr(start_stt, 'current_stt'):
+        is_active = getattr(start_stt.current_stt, 'listening_active', False)
+    
+    return {
+        "status": "active" if is_active else "inactive",
+        "is_active": is_active
+    }
