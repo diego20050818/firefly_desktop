@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流萤 - 聊天界面</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../../assets/css/main.css">
+</head>
+<body>
+    <div class="wrapper">
+        <div class="flex flex-col h-full bg-white rounded-3xl border border-gray-200
+                    shadow-[0_8px_40px_rgba(0,0,0,0.18)]">
+
+            <!-- 标题栏 / 拖动区 -->
+            <div id="drag-handle" class="flex items-center justify-between px-5 pt-4 pb-2
+                        cursor-grab active:cursor-grabbing shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></span>
+                    <span class="font-bold text-gray-800 text-lg">流萤</span>
+                </div>
+                <button id="btn-close" class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-400 hover:text-white
+                               text-gray-400 flex items-center justify-center text-xs transition-colors">
+                    ✕
+                </button>
+            </div>
+
+            <!-- 分隔线 -->
+            <div class="mx-4 border-t border-gray-100 shrink-0"></div>
+
+            <!-- 对话区 -->
+            <div id="messages-container" class="flex-1 px-4 py-3 overflow-y-auto flex flex-col">
+                <div class="bot-message message-bubble">我将——点燃星海！</div>
+            </div>
+
+            <!-- 分隔线 -->
+            <div class="mx-4 border-t border-gray-100 shrink-0"></div>
+
+            <!-- 输入区 -->
+            <div class="px-4 py-3 shrink-0 flex gap-2 items-center">
+                <input id="input" type="text" placeholder="输入消息..." class="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2
+                              text-sm outline-none focus:ring-2 focus:ring-blue-300 transition">
+                <button id="btn-send" class="shrink-0 bg-blue-500 hover:bg-blue-600 active:scale-95
+                               text-white rounded-xl px-4 py-2 text-sm font-medium transition-all">
+                    发送
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="../../assets/js/chat.js"></script>
+</body>
+</html>

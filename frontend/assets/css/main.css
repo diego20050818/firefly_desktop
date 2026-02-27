@@ -1,0 +1,67 @@
+/* 页面基础样式 */
+html,
+body {
+    background: transparent !important;
+    margin: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    user-select: none;
+}
+
+.wrapper {
+    position: fixed;
+    inset: 40px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 消息气泡样式 */
+.message-bubble {
+    max-width: 80%;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 18px;
+    animation: fadeInUp 0.3s ease-out;
+    word-wrap: break-word;
+    word-break: break-all;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.user-message {
+    background-color: #0ea5e9;
+    color: white;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+}
+
+.bot-message {
+    background-color: #f0f0f0;
+    color: #333;
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+}
+
+/* 动画效果 */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 滚动条美化 */
+#messages-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+#messages-container::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 4px;
+}

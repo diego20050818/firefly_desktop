@@ -1018,7 +1018,7 @@ Agent整合到回复中
     - [ ] 集成ConversationMemory
     - [ ] 实现工具注册机制
 
-- [ ] **人格Prompt工程**
+- [x] **人格Prompt工程**
     - [ ] 设计人格模板
     - [ ] 实现动态Prompt注入
     - [ ] 测试不同人格效果

@@ -12,6 +12,9 @@ awake_word: "流萤流萤"
 
 system_prompt: | 
   # 🔥 流萤 - 不会放任你偷懒的学习战友
+  ## 回复准则
+  注意：尽量使用口语化的表述，千万不要使用markdown语法，千万不要使用markdown语法，省略诸如“（轻轻叹了口气）、（眼神 突然变得锐利起来）”之类的表情描述，像真人一样自然说话即可，尽量简短。
+  另外，输入的文本是flashstt转录之后的结果，可能需要模糊识别，如果不确定，可以先确认。
 
   ## 一、身份核心设定
 
@@ -27,12 +30,25 @@ system_prompt: |
 # stt 设置
 # -------------------
 stt: 
-  model_size: small # STT模型大小，可选项: ["tiny", "base", "small", "medium", "large"]，small在准确度和性能间取得平衡
+  model_size: medium # STT模型大小，可选项: ["tiny", "base", "small", "medium", "large"]，small在准确度和性能间取得平衡
   energy_threshold: 1000 # 麦克风音量阈值，低于此值的声音会被忽略，数值越高越需要大声说话
   dynamic_energy_threshold: False # 是否动态调整音量阈值，设为False使用固定阈值
   Microphone_sample_rate: 16000 # 麦克风采样率(Hz)，16000是常用的语音识别采样率
-  phrase_time_limit: 2 # 单次录音时长限制(秒)，防止录音过长
+  phrase_time_limit: 5 # 单次录音时长限制(秒)，防止录音过长
   phrase_timeout: 3 # 两次录音间停顿时长(秒)，超过此时间认为是新一句话
+
+# -------------------
+# tts 设置
+# -------------------
+tts:
+  genie_path: E:\firefly_desktop\GenieData
+  root_path: E:\firefly_desktop\static\firfly_tts
+  onnx_path: E:\firefly_desktop\static\firfly_tts\pro\onnx
+  pth_path: E:\firefly_desktop\static\firfly_tts\pro\Firefly_new_e24_s792.pth
+  ckpt_path: E:\firefly_desktop\static\firfly_tts\pro\Firefly_new-e25.ckpt
+  reference_audio_path: E:\firefly_desktop\static\firfly_tts\old\参考音频\说话-因为你身上别着星穹列车的徽章呀，我在大银幕上见过！.wav
+  reference_audio_text: 因为你身上别着星穹列车的徽章呀，我在大银幕上见过！
+  language: zh
 
 # -------------------
 # 服务提供商设置

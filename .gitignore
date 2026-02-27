@@ -2,16 +2,102 @@
 backend/.venv/
 backend/__pycache__/
 backend/*.pyc
+backend/**/*.pyc
 backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.coverage
+backend/htmlcov/
+
+# Virtual environments
+**/venv/
+**/env/
+**/ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+*.so
+*.dylib
 
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend/.nuxt/
+frontend/out/
+frontend/Live2D_sdk
 
 # Tauri
 frontend/src-tauri/target/
 
-# 环境变量
+# Environment variables
 .env
 *.env.local
+.env.production
+.env.development
 
+# VCPKG
+frontend/vcpkg/
+frontend/vcpkg_installed/
+
+# Visual Studio
+frontend/firefly_frontend/.vs/
+frontend/firefly_frontend/x64/
+frontend/firefly_frontend/Debug/
+frontend/firefly_frontend/Release/
+frontend/firefly_frontend/*.user
+frontend/firefly_frontend/*.sln
+frontend/firefly_frontend/*.vcxproj*
+frontend/firefly_frontend/ipch/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+*.log
+
+# Assets cache
+frontend/assets/cache/
+frontend/assets/build/
+
+# User specific files
+frontend/firefly_frontend/firefly_frontend/UserParams.txt
+frontend/firefly_frontend/firefly_frontend/Debug/*
+!frontend/firefly_frontend/firefly_frontend/Debug/index.html
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Development artifacts
+GenieData/
+static/
+logs/
+history/*.json
+*.zip
+*.tar.gz
+*.rar
+
+# Backend specific
+backend/logs/
+backend/data/
+backend/__pycache__/
+backend/*.log
+backend/.coverage
+backend/htmlcov/
+backend/.pytest_cache/
