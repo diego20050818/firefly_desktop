@@ -1,5 +1,4 @@
-﻿#define CHAT_PAGE_PATH L"/pages/chat/index.html"
-#include <windows.h>
+﻿#include <windows.h>
 #include <windowsx.h>
 #include <wrl.h>
 #include <wil/com.h>
@@ -7,54 +6,67 @@
 #include <objbase.h>
 #include <dwmapi.h>
 #include <string>
+
 #pragma comment(lib, "dwmapi.lib")
+
 using namespace Microsoft::WRL;
 
-wil::com_ptr<ICoreWebView2Controller> g_controller;
-wil::com_ptr<ICoreWebView2> g_webview;
+// --- 虚拟域名配置 ---
+#define VIRTUAL_HOST L"firefly.local"
+#define MODEL_PAGE_PATH L"/pages/model/index.html"
+#define CHAT_PAGE_PATH L"/pages/chat/index.html"
 
-const int CARD_W = 420;
-const int CARD_H = 560;
-const int SHADOW_PAD = 40;              // 四周留给阴影的空间
-const int WIN_W = CARD_W + SHADOW_PAD * 2;
-const int WIN_H = CARD_H + SHADOW_PAD * 2;
+// --- 全局变量 ---
+wil::com_ptr<ICoreWebView2Controller> g_controllerModel;
+wil::com_ptr<ICoreWebView2> g_webviewModel;
+HWND g_hWndModel = nullptr;
 
+wil::com_ptr<ICoreWebView2Controller> g_controllerChat;
+wil::com_ptr<ICoreWebView2> g_webviewChat;
+HWND g_hWndChat = nullptr;
+
+const int MODEL_W = 500;
+const int MODEL_H = 600;
+const int CHAT_W = 420;
+const int CHAT_H = 560;
+const int SHADOW_PAD = 40;
+
+// 获取当前 EXE 所在的目录
+std::wstring GetFrontendRootDir() {
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileName(NULL, buffer, MAX_PATH);
+    std::wstring path(buffer);
+    size_t lastSlash = path.find_last_of(L"\\/");
+    return path.substr(0, lastSlash);
+}
+
+// 窗口过程
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
-
     case WM_SIZE:
-        if (g_controller) {
-            RECT bounds;
-            GetClientRect(hWnd, &bounds);
-            g_controller->put_Bounds(bounds);
+        if (hWnd == g_hWndModel && g_controllerModel) {
+            RECT bounds; GetClientRect(hWnd, &bounds);
+            g_controllerModel->put_Bounds(bounds);
+        }
+        else if (hWnd == g_hWndChat && g_controllerChat) {
+            RECT bounds; GetClientRect(hWnd, &bounds);
+            g_controllerChat->put_Bounds(bounds);
         }
         break;
-
-    case WM_ERASEBKGND: {
-        HDC hdc = (HDC)wParam;
-        RECT rc;
-        GetClientRect(hWnd, &rc);
-        HBRUSH brush = CreateSolidBrush(RGB(0, 0, 0));
-        FillRect(hdc, &rc, brush);
-        DeleteObject(brush);
+    case WM_ERASEBKGND:
         return 1;
-    }
-
-                      // ★ 透明 padding 区域鼠标穿透
-    case WM_NCHITTEST: {
-        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        ScreenToClient(hWnd, &pt);
-        RECT rc;
-        GetClientRect(hWnd, &rc);
-        // 鼠标在 padding 区域内 → 穿透到桌面
-        if (pt.x < SHADOW_PAD || pt.y < SHADOW_PAD ||
-            pt.x > rc.right - SHADOW_PAD ||
-            pt.y > rc.bottom - SHADOW_PAD) {
-            return HTTRANSPARENT;
+    case WM_NCHITTEST:
+        if (hWnd == g_hWndModel) {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hWnd, &pt);
+            RECT rc; GetClientRect(hWnd, &rc);
+            if (pt.x < SHADOW_PAD || pt.y < SHADOW_PAD ||
+                pt.x > rc.right - SHADOW_PAD ||
+                pt.y > rc.bottom - SHADOW_PAD) {
+                return HTTRANSPARENT; // 边缘透明区域鼠标穿透
+            }
         }
         return HTCLIENT;
-    }
-
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -62,115 +74,130 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
-
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(hr)) {
-        MessageBox(NULL, L"COM 初始化失败", L"Error", MB_OK);
-        return -1;
+void SetWebviewTransparent(wil::com_ptr<ICoreWebView2Controller> controller) {
+    wil::com_ptr<ICoreWebView2Controller2> ctrl2;
+    if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&ctrl2)))) {
+        COREWEBVIEW2_COLOR transparent = { 0, 0, 0, 0 };
+        ctrl2->put_DefaultBackgroundColor(transparent);
     }
+}
 
-    WNDCLASSEX wcex = {};
-    wcex.cbSize = sizeof(WNDCLASSEX);
-    wcex.lpfnWndProc = WndProc;
-    wcex.hInstance = hInstance;
-    wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-    wcex.lpszClassName = L"FireflyDesktop";
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+    WNDCLASSEX wcex = { sizeof(WNDCLASSEX), CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FireflyDesktop", NULL };
     RegisterClassEx(&wcex);
 
-    // 右下角定位
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int posX = screenW - WIN_W - 40 + SHADOW_PAD; // 抵消 padding 视觉偏移
-    int posY = screenH - WIN_H - 60 + SHADOW_PAD;
 
-    HWND hWnd = CreateWindowEx(
-        WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
-        L"FireflyDesktop", L"Firefly",
-        WS_POPUP,
-        posX, posY, WIN_W, WIN_H,
-        NULL, NULL, hInstance, NULL
-    );
-
-    if (!hWnd) { CoUninitialize(); return -1; }
-
+    // 1. 创建模型窗口
+    g_hWndModel = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+        L"FireflyDesktop", L"Model", WS_POPUP,
+        100, screenH - MODEL_H - 100, MODEL_W, MODEL_H, NULL, NULL, hInstance, NULL);
     MARGINS margins = { -1 };
-    DwmExtendFrameIntoClientArea(hWnd, &margins);
+    DwmExtendFrameIntoClientArea(g_hWndModel, &margins);
+    ShowWindow(g_hWndModel, nCmdShow);
 
-    ShowWindow(hWnd, nCmdShow);
-    UpdateWindow(hWnd);
+    // 2. 创建聊天窗口
+    g_hWndChat = CreateWindowEx(WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+        L"FireflyDesktop", L"Chat", WS_POPUP,
+        screenW - CHAT_W - 100, screenH - CHAT_H - 100, CHAT_W, CHAT_H, NULL, NULL, hInstance, NULL);
+    ShowWindow(g_hWndChat, nCmdShow);
 
-    hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
+    std::wstring rootDir = GetFrontendRootDir();
+
+    CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [hWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(result) || !env) return result;
+            [rootDir](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
 
-                env->CreateCoreWebView2Controller(hWnd,
+                // --- 初始化模型 WebView ---
+                env->CreateCoreWebView2Controller(g_hWndModel,
                     Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                            if (FAILED(result) || !controller) return result;
+                        [rootDir](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                            g_controllerModel = controller;
+                            g_controllerModel->get_CoreWebView2(&g_webviewModel);
 
-                            g_controller = controller;
-                            g_controller->get_CoreWebView2(&g_webview);
-
-                            // WebView2 背景透明
-                            wil::com_ptr<ICoreWebView2Controller2> ctrl2;
-                            g_controller->QueryInterface(IID_PPV_ARGS(&ctrl2));
-                            if (ctrl2) {
-                                COREWEBVIEW2_COLOR transparent = { 0, 0, 0, 0 };
-                                ctrl2->put_DefaultBackgroundColor(transparent);
+                            wil::com_ptr<ICoreWebView2_3> webView3;
+                            if (SUCCEEDED(g_webviewModel->QueryInterface(IID_PPV_ARGS(&webView3)))) {
+                                webView3->SetVirtualHostNameToFolderMapping(VIRTUAL_HOST, rootDir.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
                             }
 
-                            // ★ 显式开启 Web 消息通道
+                            // --- 关键补丁：开启消息通道 ---
                             wil::com_ptr<ICoreWebView2Settings> settings;
-                            g_webview->get_Settings(&settings);
-                            if (settings) {
-                                settings->put_IsWebMessageEnabled(TRUE);
-                                settings->put_AreDefaultContextMenusEnabled(FALSE);
-                            }
+                            g_webviewModel->get_Settings(&settings);
+                            if (settings) settings->put_IsWebMessageEnabled(TRUE);
 
-                            RECT bounds;
-                            GetClientRect(hWnd, &bounds);
-                            g_controller->put_Bounds(bounds);
-                            g_controller->put_IsVisible(TRUE);
-
-                            // ★ 接收 JS 消息
-                            g_webview->add_WebMessageReceived(
+                            // --- 关键补丁：处理模型窗口的拖动消息 ---
+                            g_webviewModel->add_WebMessageReceived(
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
-                                    [hWnd](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                    [](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
                                         wil::unique_cotaskmem_string raw;
                                         args->TryGetWebMessageAsString(&raw);
-                                        if (!raw) return S_OK;
-
-                                        std::wstring msg = raw.get();
-                                        OutputDebugString((L"Received message: " + msg + L"\n").c_str());
-
-                                        if (msg == L"drag") {
-                                            ReleaseCapture();
-                                            SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
-                                        }
-                                        else if (msg == L"close") {
-                                            PostMessage(hWnd, WM_CLOSE, 0, 0);
-                                        }
-                                        else if (msg == L"minimize") {
-                                            ShowWindow(hWnd, SW_MINIMIZE);
+                                        if (raw) {
+                                            std::wstring msg = raw.get();
+                                            if (msg == L"drag") {
+                                                ReleaseCapture();
+                                                // 这里确保发送给模型窗口句柄 g_hWndModel
+                                                SendMessage(g_hWndModel, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+                                            }
                                         }
                                         return S_OK;
                                     }).Get(), nullptr);
 
-                            // 加载本地 HTML
-                            wchar_t buffer[MAX_PATH];
-                            GetModuleFileName(NULL, buffer, MAX_PATH);
-                            std::wstring exePath(buffer);
-                            exePath = exePath.substr(0, exePath.find_last_of(L"\\/"));
-
-                            // 由于构建步骤会复制文件到输出目录，这里可以直接使用相对路径
-                            std::wstring htmlPath = L"file:///" + exePath + CHAT_PAGE_PATH;
-
-                            g_webview->Navigate(htmlPath.c_str());
-
+                            SetWebviewTransparent(g_controllerModel);
+                            RECT bounds; GetClientRect(g_hWndModel, &bounds);
+                            g_controllerModel->put_Bounds(bounds);
+                            g_controllerModel->put_IsVisible(TRUE);
+                            g_webviewModel->Navigate((L"https://" + std::wstring(VIRTUAL_HOST) + MODEL_PAGE_PATH).c_str());
                             return S_OK;
                         }).Get());
+
+                // --- 初始化聊天 WebView ---
+                env->CreateCoreWebView2Controller(g_hWndChat,
+                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [rootDir](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                            g_controllerChat = controller;
+                            g_controllerChat->get_CoreWebView2(&g_webviewChat);
+
+                            wil::com_ptr<ICoreWebView2_3> webView3Chat;
+                            if (SUCCEEDED(g_webviewChat->QueryInterface(IID_PPV_ARGS(&webView3Chat)))) {
+                                webView3Chat->SetVirtualHostNameToFolderMapping(VIRTUAL_HOST, rootDir.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+                            }
+
+                            SetWebviewTransparent(g_controllerChat);
+
+                            // 开启 JS 消息通信
+                            wil::com_ptr<ICoreWebView2Settings> settings;
+                            g_webviewChat->get_Settings(&settings);
+                            if (settings) settings->put_IsWebMessageEnabled(TRUE);
+
+                            // ★ 重新加入拖动和关闭的消息处理 ★
+                            g_webviewChat->add_WebMessageReceived(
+                                Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+                                    [](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+                                        wil::unique_cotaskmem_string raw;
+                                        args->TryGetWebMessageAsString(&raw);
+                                        if (raw) {
+                                            std::wstring msg = raw.get();
+                                            if (msg == L"drag") {
+                                                ReleaseCapture();
+                                                SendMessage(g_hWndChat, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+                                            }
+                                            else if (msg == L"close") {
+                                                PostMessage(g_hWndChat, WM_CLOSE, 0, 0);
+                                            }
+                                        }
+                                        return S_OK;
+                                    }).Get(), nullptr);
+
+                            RECT bounds; GetClientRect(g_hWndChat, &bounds);
+                            g_controllerChat->put_Bounds(bounds);
+                            g_controllerChat->put_IsVisible(TRUE);
+                            g_webviewChat->Navigate((L"https://" + std::wstring(VIRTUAL_HOST) + CHAT_PAGE_PATH).c_str());
+                            return S_OK;
+                        }).Get());
+
                 return S_OK;
             }).Get());
 
@@ -179,9 +206,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-
-    g_webview = nullptr;
-    g_controller = nullptr;
     CoUninitialize();
     return (int)msg.wParam;
 }

@@ -34,6 +34,8 @@ frontend/dist/
 frontend/.nuxt/
 frontend/out/
 frontend/Live2D_sdk
+frontend/CubismSdkForWeb-5-r.4/
+frontend/assets/model/Firefly/
 
 # Tauri
 frontend/src-tauri/target/
@@ -51,6 +53,7 @@ frontend/vcpkg_installed/
 # Visual Studio
 frontend/firefly_frontend/.vs/
 frontend/firefly_frontend/x64/
+frontend/firefly_frontend/firefly_frontend/x64
 frontend/firefly_frontend/Debug/
 frontend/firefly_frontend/Release/
 frontend/firefly_frontend/*.user

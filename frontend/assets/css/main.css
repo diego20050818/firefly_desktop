@@ -65,3 +65,135 @@ body {
     background: #e2e8f0;
     border-radius: 4px;
 }
+
+/* Markdown内容样式 */
+.markdown-content {
+    line-height: 1.6;
+}
+
+.markdown-content code {
+    background-color: #eef2ff;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.markdown-content pre {
+    background-color: #f8fafc;
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
+.markdown-content pre code {
+    background: none;
+    padding: 0;
+    border-radius: 0;
+}
+
+.markdown-content blockquote {
+    border-left: 3px solid #e2e8f0;
+    padding-left: 12px;
+    margin: 8px 0;
+    color: #64748b;
+}
+
+.markdown-content ul, .markdown-content ol {
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+.markdown-content li {
+    margin: 4px 0;
+}
+
+/* 时间戳样式 */
+.timestamp {
+    font-size: 12px;
+    color: #999;
+    margin-top: 5px;
+    text-align: right;
+}
+
+/* 工具调用消息样式 (类似微信拍一拍) */
+.tool-call-message {
+    margin: 8px 0;
+    min-height: 24px;
+}
+
+.tool-call-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    background-color: #f1f5f9;
+    border-radius: 16px;
+    font-size: 0.875rem;
+}
+
+.loading-spinner {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.spinner-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #3b82f6;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    50% {
+        transform: translateY(-2px);
+        opacity: 0.7;
+    }
+}
+
+.animate-bounce {
+    animation: bounce 0.6s infinite;
+}
+
+/* 推理消息样式 */
+.reasoning {
+    background-color: #dbeafe;
+    border-left: 4px solid #3b82f6;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 0 8px 8px 8px;
+    font-style: italic;
+    color: #1e3a8a;
+}
+
+.reasoning-header {
+    margin-bottom: 8px;
+}
+
+.reasoning-content {
+    line-height: 1.5;
+}
+
+/* 错误消息样式 */
+.error-message {
+    background-color: #fee2e2;
+    color: #7f1d1d;
+    border: 1px solid #fecaca;
+    padding: 12px;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.error-header {
+    margin-bottom: 8px;
+}
+
+.error-content {
+    line-height: 1.5;
+}
