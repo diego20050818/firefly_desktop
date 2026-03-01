@@ -7,120 +7,126 @@ let sessionId = 'default';
 let currentAiMessageElement = null;
 let currentFullContent = '';
 let currentToolCallElement = null;
+let isStreaming = false; // 用于追踪是否正在流式输出，解决重复气泡问题
 
-const EMOTION_TAGS = ['墨镜','猫耳','裂开','鄙夷','生气','问号','眼泪','流汗','呆愣','开心'];
+const EMOTION_TAGS = ['墨镜', '猫耳', '裂开', '鄙夷', '生气', '问号', '眼泪', '流汗', '呆愣', '开心'];
 const TAG_BUFFER_MAX = 32;
 let tagBuffer = '';
+
+// TTS 状态
+let ttsEnabled = false;
+
+// STT 状态
+let spacePressed = false;
+let spacePressTimer = null;
+let isListening = false;
+
 // 消息滚动到底部
 function scrollToBottom() {
     const container = document.getElementById('messages-container');
-    container.scrollTop = container.scrollHeight;
+    container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+    });
+}
+
+// 过滤标签函数
+function filterTags(text) {
+    if (!text) return "";
+    // 移除 </ 任意内容 /> 这种表情标签
+    return text.replace(/<\/([^>]+)\/>/g, "");
 }
 
 // 添加消息到聊天容器
 function addMessage(text, isUser = false, showTimestamp = true) {
     const container = document.getElementById('messages-container');
     const div = document.createElement('div');
-    div.className = `message-bubble ${isUser ? 'user-message' : 'bot-message'}`;
-    
-    // 使用Marked解析markdown
-    const markdownContent = marked.parse(text);
+    div.className = `message-bubble ${isUser ? 'user-message shadow-sm' : 'bot-message shadow-sm'}`;
+
+    // 过滤标签后再解析markdown
+    const filteredText = filterTags(text);
+    const markdownContent = marked.parse(filteredText);
     div.innerHTML = `<div class="markdown-content">${markdownContent}</div>`;
-    
+
     if (showTimestamp) {
         const timestamp = document.createElement('div');
-        timestamp.className = 'timestamp mt-1 text-xs text-gray-500';
+        timestamp.className = 'timestamp text-right px-1';
         timestamp.textContent = getCurrentTime();
         div.appendChild(timestamp);
     }
-    
+
     container.appendChild(div);
     scrollToBottom();
+
+    // 如果是AI消息且开启了TTS，则请求发音（过滤标签）
+    if (!isUser && ttsEnabled && filteredText) {
+        generateTTS(filteredText.replace(/<\/?[^>]+(>|$)/g, ""));
+    }
 }
 
-// 添加工具调用消息（类似微信拍一拍样式）
+// 添加工具调用消息
 function addToolCallMessage(toolName, argumentsStr) {
     const container = document.getElementById('messages-container');
     const toolDiv = document.createElement('div');
-    toolDiv.className = 'tool-call-message text-center text-sm text-gray-500 my-2';
-    toolDiv.id = `tool-${Date.now()}`; // 添加唯一ID避免冲突
-    
-    // 解析参数，获取关键信息用于显示
-    let displayArgs = "";
-    try {
-        const args = JSON.parse(argumentsStr);
-        // 只显示前两个参数值，避免显示过长
-        const argValues = Object.values(args).slice(0, 2);
-        displayArgs = argValues.length > 0 ? `(${argValues.join(', ')})` : "";
-    } catch {
-        displayArgs = "";
-    }
-    
-    toolDiv.innerHTML = `
-        <div class="tool-call-content flex items-center justify-center gap-2">
-            <span class="tool-name font-medium text-blue-600">@${toolName}</span>
-            <span class="tool-args text-gray-500">${displayArgs}</span>
-            <div class="loading-spinner flex items-center gap-1">
-                <div class="spinner-dot w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <div class="spinner-dot w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.1s;"></div>
-                <div class="spinner-dot w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0.2s;"></div>
-            </div>
-        </div>
-    `;
-    
+    toolDiv.className = 'tool-call-message';
+
+    toolDiv.innerHTML = `<div class="tool-call-content animate-pulse">⚙️ 正在调用 ${toolName}...</div>`;
+
     container.appendChild(toolDiv);
     scrollToBottom();
-    
-    // 记录当前工具调用元素，用于后续结果关联
     currentToolCallElement = toolDiv;
 }
 
 // 更新工具调用结果
 function updateToolResult(toolName, result, isSuccess = true) {
     if (currentToolCallElement) {
-        const toolContent = currentToolCallElement.querySelector('.tool-call-content');
-        if (toolContent) {
-            const statusEmoji = isSuccess ? '✅' : '❌';
-            const statusText = isSuccess ? '成功' : '失败';
-            const statusColor = isSuccess ? 'text-green-600' : 'text-red-600';
-            
-            toolContent.innerHTML = `
-                <span class="${statusColor} mr-2">${statusEmoji}</span>
-                <span class="tool-name font-medium text-blue-600">@${toolName}</span>
-                <span class="tool-status ${statusColor}">执行${statusText}</span>
-            `;
-            
-            // 2秒后移除工具调用元素，让它融入到AI的回复中
+        const content = currentToolCallElement.querySelector('.tool-call-content');
+        if (content) {
+            content.classList.remove('animate-pulse');
+            content.innerHTML = isSuccess ? `✅ 已执行 ${toolName}` : `❌ ${toolName} 执行失败`;
+
             setTimeout(() => {
-                if (currentToolCallElement && currentToolCallElement.parentNode) {
-                    currentToolCallElement.parentNode.removeChild(currentToolCallElement);
+                if (currentToolCallElement) {
+                    currentToolCallElement.style.opacity = '0';
+                    setTimeout(() => {
+                        currentToolCallElement?.remove();
+                        currentToolCallElement = null;
+                    }, 300);
                 }
-                currentToolCallElement = null;
             }, 2000);
         }
     }
 }
 
-// 添加推理消息
+// 添加推理消息 - 使用折叠组件
 function addReasoningMessage(content) {
     const container = document.getElementById('messages-container');
-    const div = document.createElement('div');
-    div.className = 'reasoning';
-    
+
+    // 检查是否已经存在最新的思考气泡，如果是流式推送则追加
+    let details = container.querySelector('.reasoning-details:last-child');
+    if (!details || details.dataset.finalized === 'true') {
+        details = document.createElement('details');
+        details.className = 'reasoning-details';
+        details.innerHTML = `
+            <summary class="reasoning-summary">思考中...</summary>
+            <div class="reasoning-content"></div>
+        `;
+        container.appendChild(details);
+    }
+
+    const contentDiv = details.querySelector('.reasoning-content');
     const markdownContent = marked.parse(content);
-    div.innerHTML = `
-        <div class="reasoning-header flex items-center gap-2 mb-1">
-            <svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-            </svg>
-            <span class="text-sm font-medium text-blue-700">思考过程</span>
-        </div>
-        <div class="reasoning-content">${markdownContent}</div>
-        <div class="timestamp mt-1 text-xs text-gray-500">${getCurrentTime()}</div>
-    `;
-    
-    container.appendChild(div);
+    contentDiv.innerHTML = markdownContent;
     scrollToBottom();
+}
+
+function finalizeReasoning() {
+    const container = document.getElementById('messages-container');
+    const details = container.querySelector('.reasoning-details:last-child');
+    if (details) {
+        details.querySelector('.reasoning-summary').textContent = '已思考';
+        details.dataset.finalized = 'true';
+    }
 }
 
 // 添加错误消息
@@ -128,18 +134,7 @@ function addErrorMessage(message) {
     const container = document.getElementById('messages-container');
     const div = document.createElement('div');
     div.className = 'error-message';
-    
-    div.innerHTML = `
-        <div class="error-header flex items-center gap-2 mb-1">
-            <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-            </svg>
-            <span class="text-sm font-medium text-red-700">错误</span>
-        </div>
-        <div class="error-content">${message}</div>
-        <div class="timestamp mt-1 text-xs text-gray-500">${getCurrentTime()}</div>
-    `;
-    
+    div.innerHTML = `⚠️ ${message}`;
     container.appendChild(div);
     scrollToBottom();
 }
@@ -148,346 +143,318 @@ function addErrorMessage(message) {
 function addSystemMessage(message) {
     const container = document.getElementById('messages-container');
     const div = document.createElement('div');
-    div.className = 'message-bubble bot-message';
-    
-    div.innerHTML = `
-        <div class="system-message-content">
-            <strong>🤖 系统:</strong> ${message}
-        </div>
-        <div class="timestamp mt-1 text-xs text-gray-500">${getCurrentTime()}</div>
-    `;
-    
+    div.className = 'text-center text-[10px] text-gray-400 my-2 uppercase tracking-widest';
+    div.textContent = `— ${message} —`;
     container.appendChild(div);
     scrollToBottom();
 }
 
 // 添加或追加AI消息内容
 function appendTokenToCurrentMessage(token) {
+    isStreaming = true; // 标记正在流式传输
     if (!currentAiMessageElement) {
-        // 创建新的AI消息元素
         currentAiMessageElement = document.createElement('div');
-        currentAiMessageElement.className = 'message-bubble bot-message';
-        
+        currentAiMessageElement.className = 'message-bubble bot-message shadow-sm';
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'markdown-content';
         currentAiMessageElement.appendChild(contentDiv);
-        
+
         const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'timestamp mt-1 text-xs text-gray-500';
+        timestampDiv.className = 'timestamp text-right px-1';
         timestampDiv.textContent = getCurrentTime();
         currentAiMessageElement.appendChild(timestampDiv);
-        
-        const container = document.getElementById('messages-container');
-        container.appendChild(currentAiMessageElement);
+
+        document.getElementById('messages-container').appendChild(currentAiMessageElement);
     }
 
     currentFullContent += token;
-    
-    // 使用Marked解析markdown并更新内容
-    const markdownContent = marked.parse(currentFullContent);
-    currentAiMessageElement.querySelector('.markdown-content').innerHTML = markdownContent;
-    
+    // 流式渲染时也保持过滤标签
+    const filteredDisplay = filterTags(currentFullContent);
+    currentAiMessageElement.querySelector('.markdown-content').innerHTML = marked.parse(filteredDisplay);
     scrollToBottom();
 }
 
 // 完成AI消息
 function finalizeAIMessage() {
+    if (ttsEnabled && currentFullContent) {
+        // 最终合成时务必过滤标签
+        const cleanText = filterTags(currentFullContent).replace(/<\/?[^>]+(>|$)/g, "");
+        if (cleanText.trim()) {
+            generateTTS(cleanText);
+        }
+    }
     currentAiMessageElement = null;
     currentFullContent = '';
+    isStreaming = false;
 }
 
 // 更新连接状态
-function updateStatus(status, text) {
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    
-    switch (status) {
-        case 'connected':
-            statusDot.className = 'w-2 h-2 rounded-full bg-green-500';
-            statusText.textContent = '已连接';
-            break;
-        case 'connecting':
-            statusDot.className = 'w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
-            statusText.textContent = '连接中...';
-            break;
-        case 'disconnected':
-            statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
-            statusText.textContent = '未连接';
-            break;
+function updateStatus(status) {
+    const dot = document.getElementById('status-dot');
+    const text = document.getElementById('status-text');
+
+    if (status === 'connected') {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_#4ade80]';
+        text.textContent = '已在线';
+    } else if (status === 'connecting') {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse';
+        text.textContent = '连接中';
+    } else {
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-red-400';
+        text.textContent = '离线';
     }
 }
 
-// 获取当前时间
 function getCurrentTime() {
-    const now = new Date();
-    return now.toLocaleTimeString('zh-CN', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        second: '2-digit'
-    });
+    return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
 
-// 连接WebSocket
-function connectWebSocket() {
+// API 调用
+async function generateTTS(text) {
+    if (!text || !text.trim()) return;
     try {
-        updateStatus('connecting', '连接中...');
-        ws = new WebSocket('ws://localhost:8000/ws/agent/chat');
-        
-        ws.onopen = () => {
-            isConnected = true;
-            updateStatus('connected', '已连接');
-            console.log('WebSocket connected');
-        };
-
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleMessage(data);
-        };
-
-        ws.onclose = () => {
-            isConnected = false;
-            updateStatus('disconnected', '已断开');
-            console.log('WebSocket disconnected');
-            
-            // 尝试重连
-            setTimeout(() => {
-                connectWebSocket();
-            }, 3000);
-        };
-
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            updateStatus('disconnected', '连接错误');
-        };
-    } catch (error) {
-        console.error('Failed to connect WebSocket:', error);
-        updateStatus('disconnected', '连接失败');
+        await fetch('http://localhost:8000/tts/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: text,
+                character_name: "流萤"
+            })
+        });
+    } catch (e) {
+        console.error('TTS failed:', e);
     }
 }
 
-// 处理WebSocket消息
-function handleMessage(data) {
-    console.log('Received message:', data);
+let sttToggle = false;
+async function toggleSTT() {
+    if (sttToggle) {
+        sttToggle = false;
+        stopSTT();
+    } else {
+        sttToggle = true;
+        startSTT();
+    }
+}
 
+async function startSTT() {
+    isListening = true;
+    document.getElementById('siri-wave').classList.add('active');
+    document.getElementById('input').placeholder = "正在倾听...";
+    sendModelCommand('action:listening');
+    try {
+        await fetch('http://localhost:8000/stt/start', { method: 'POST' });
+        checkSTTResult();
+    } catch (e) {
+        console.error('STT Start failed:', e);
+    }
+}
+
+async function checkSTTResult() {
+    if (!isListening) return;
+    try {
+        const resp = await fetch('http://localhost:8000/stt/stop', { method: 'POST' });
+        const data = await resp.json();
+        if (data.transcription) {
+            isListening = false;
+            sttToggle = false;
+            document.getElementById('siri-wave').classList.remove('active');
+            document.getElementById('input').placeholder = "输入消息或 Ctrl+Space 语音输入...";
+            document.getElementById('input').value = data.transcription;
+            sendChat();
+        } else if (isListening) {
+            setTimeout(checkSTTResult, 1000);
+        }
+    } catch (e) {
+        console.error('Check STT result failed:', e);
+    }
+}
+
+async function stopSTT() {
+    isListening = false;
+    document.getElementById('siri-wave').classList.remove('active');
+    document.getElementById('input').placeholder = "输入消息或 Ctrl+Space 语音输入...";
+}
+
+// WebSocket
+function connectWebSocket() {
+    updateStatus('connecting');
+    ws = new WebSocket('ws://localhost:8000/ws/agent/chat');
+
+    ws.onopen = () => {
+        isConnected = true;
+        updateStatus('connected');
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWSMessage(data);
+    };
+
+    ws.onclose = () => {
+        isConnected = false;
+        updateStatus('disconnected');
+        setTimeout(connectWebSocket, 3000);
+    };
+}
+
+function handleWSMessage(data) {
     switch (data.type) {
         case 'token':
+            feedTagBuffer(data.content);
             appendTokenToCurrentMessage(data.content);
+            // 模型说话同步
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage("speaking");
+            } else if (typeof speak === 'function') {
+                speak(500);
+            }
             break;
         case 'reasoning':
-            // 在推理前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
             addReasoningMessage(data.content);
+            sendModelCommand('action:thinking');
             break;
         case 'tool_start':
             addToolCallMessage(data.tool_name, data.arguments);
+            sendModelCommand('action:thinking');
             break;
         case 'tool_end':
-            // 更新工具调用结果显示成功
             updateToolResult(data.tool_name, data.result, true);
             break;
         case 'done':
-            // 工具调用完成后，开始新的AI回复气泡
-            if (data.full_content) {
+            finalizeReasoning();
+            // ★ 修复重复气泡的核心逻辑：如果正在流式输出，则不再通过 addMessage 创建新气泡
+            // data.full_content 只在非流式或需要同步完整记录时有用
+            if (!isStreaming && data.full_content) {
                 addMessage(data.full_content, false, true);
             }
             finalizeAIMessage();
             enableInput();
             break;
         case 'error':
-            // 在错误前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
-            // 如果是工具执行错误，更新工具结果显示失败
+            finalizeReasoning();
+            finalizeAIMessage();
+            // ★ 修改工具执行错误接收逻辑
             if (currentToolCallElement) {
-                updateToolResult('未知工具', data.message, false);
+                updateToolResult('工具', data.message, false);
             } else {
-                addErrorMessage(data.message);
+                addErrorMessage(data.message || '未知错误');
             }
             enableInput();
             break;
         case 'system':
-            // 在系统消息前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
             addSystemMessage(data.message);
             break;
-        case 'heartbeat':
-            // 心跳消息，不做处理
-            break;
-        default:
-            console.warn('Unknown message type:', data.type);
     }
 }
 
-// 发送聊天消息
 function sendChat() {
     const input = document.getElementById('input');
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || !isConnected) return;
 
-    if (!isConnected) {
-        addErrorMessage('WebSocket 未连接，请稍后重试');
-        return;
-    }
-
-    // 添加用户消息到聊天
     addMessage(text, true);
-
-    // 禁用发送按钮，防止重复发送
-    const sendButton = document.getElementById('btn-send');
-    sendButton.disabled = true;
+    input.value = '';
     input.disabled = true;
 
-    // 发送消息
     ws.send(JSON.stringify({
         type: 'user_input',
         data: { text: text },
         provider: 'deepseek'
     }));
-
-    // 清空输入框
-    input.value = '';
 }
 
-// 启用输入
 function enableInput() {
-    const sendButton = document.getElementById('btn-send');
     const input = document.getElementById('input');
-    
-    sendButton.disabled = false;
     input.disabled = false;
     input.focus();
 }
 
-// 向 C++ 宿主发送模型控制命令
 function sendModelCommand(cmd) {
-    try {
-        window.chrome.webview.postMessage(cmd);
-    } catch (e) {
-        console.warn('sendModelCommand failed:', e);
-    }
+    try { window.chrome.webview.postMessage(cmd); } catch (e) { }
 }
 
 function feedTagBuffer(token) {
     tagBuffer += token;
-    // 只保留末尾 TAG_BUFFER_MAX 个字符，避免无限增长
-    if (tagBuffer.length > TAG_BUFFER_MAX) {
-        tagBuffer = tagBuffer.slice(-TAG_BUFFER_MAX);
-    }
-    // 匹配 </任意内容/>
+    if (tagBuffer.length > TAG_BUFFER_MAX) tagBuffer = tagBuffer.slice(-TAG_BUFFER_MAX);
     const match = tagBuffer.match(/<\/([^\/\s]+)\/>/);
     if (match) {
-        const tag = match[1];
-        if (EMOTION_TAGS.includes(tag)) {
-            sendModelCommand(`emotion:${tag}`);
-        }
-        // 命中后清空缓冲区，避免重复触发
+        if (EMOTION_TAGS.includes(match[1])) sendModelCommand(`emotion:${match[1]}`);
         tagBuffer = '';
     }
 }
 
-function handleMessage(data) {
-    console.log('Received message:', data);
-
-    switch (data.type) {
-        case 'token':
-            // ★ 每个 token 都喂给标签检测缓冲区
-            feedTagBuffer(data.content);
-            appendTokenToCurrentMessage(data.content);
-            break;
-        case 'reasoning':
-            // 在推理前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
-            // ★ 推理中 → 触发思考动作
-            sendModelCommand('action:thinking');
-            addReasoningMessage(data.content);
-            break;
-        case 'tool_start':
-            // ★ 工具调用中 → 触发思考动作
-            sendModelCommand('action:thinking');
-            addToolCallMessage(data.tool_name, data.arguments);
-            break;
-        case 'tool_end':
-            // 更新工具调用结果显示成功
-            updateToolResult(data.tool_name, data.result, true);
-            break;
-        case 'done':
-            // ★ 完成时清空标签缓冲区
-            tagBuffer = '';
-            // 工具调用完成后，开始新的AI回复气泡
-            if (data.full_content) {
-                addMessage(data.full_content, false, true);
-            }
-            finalizeAIMessage();
-            enableInput();
-            break;
-        case 'error':
-            tagBuffer = '';
-            // 在错误前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
-            // 如果是工具执行错误，更新工具结果显示失败
-            if (currentToolCallElement) {
-                updateToolResult('未知工具', data.message, false);
-            } else {
-                addErrorMessage(data.message);
-            }
-            enableInput();
-            break;
-        case 'system':
-            // 在系统消息前完成当前AI消息（如果有的话）
-            if (currentAiMessageElement) {
-                finalizeAIMessage();
-            }
-            addSystemMessage(data.message);
-            break;
-        case 'heartbeat':
-            // 心跳消息，不做处理
-            break;
-        default:
-            console.warn('Unknown message type:', data.type);
-    }
-}
-
-// 页面加载完成后初始化事件监听
+// 初始化
 document.addEventListener('DOMContentLoaded', () => {
-    function sendMsg(cmd) {
-        window.chrome.webview.postMessage(cmd);
-    }
-
-    // 1. 拖动窗口功能 - 添加检查：如果是点击按钮，则不触发拖动
+    // 基础交互
     document.getElementById('drag-handle').addEventListener('mousedown', (e) => {
-        // 如果点击的是按钮，则忽略
-        if (e.target.closest('button')) return;                
-        
-        if (e.button === 0) sendMsg('drag');
+        if (!e.target.closest('button')) sendModelCommand('drag');
     });
 
-    // 2. 关闭窗口功能
-    document.getElementById('btn-close').addEventListener('click', (e) => {
-        // 阻止事件冒泡到父级 drag-handle
-        e.stopPropagation(); 
-        sendMsg('close');
-    });
-
-    // 发送按钮点击事件
+    document.getElementById('btn-close').addEventListener('click', () => sendModelCommand('close'));
     document.getElementById('btn-send').addEventListener('click', sendChat);
-
-    // 回车发送消息
     document.getElementById('input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') sendChat();
     });
 
-    // 初始化滚动到底部
-    scrollToBottom();
-    
-    // 连接WebSocket
+    // TTS 开关
+    document.getElementById('btn-tts').addEventListener('click', () => {
+        ttsEnabled = !ttsEnabled;
+        const btn = document.getElementById('btn-tts');
+        const dot = document.getElementById('tts-status-dot');
+        const text = document.getElementById('tts-status-text');
+
+        btn.innerHTML = ttsEnabled ? '🔊' : '🔇';
+        dot.className = ttsEnabled ? 'w-1.5 h-1.5 rounded-full bg-green-400' : 'w-1.5 h-1.5 rounded-full bg-gray-400';
+        text.textContent = ttsEnabled ? 'TTS ON' : 'TTS OFF';
+    });
+
+    // 侧边栏控制
+    const panel = document.getElementById('settings-panel');
+    const overlay = document.getElementById('menu-overlay');
+
+    document.getElementById('open-settings').addEventListener('click', () => {
+        panel.classList.add('open');
+        overlay.classList.add('active');
+    });
+
+    const closeMenu = () => {
+        panel.classList.remove('open');
+        overlay.classList.remove('active');
+    };
+
+    document.getElementById('close-settings').addEventListener('click', closeMenu);
+    overlay.addEventListener('click', closeMenu);
+
+    // 新对话
+    document.getElementById('btn-new-chat').addEventListener('click', async () => {
+        try {
+            await fetch(`http://localhost:8000/agent/reset?session_id=${sessionId}`, { method: 'POST' });
+            document.getElementById('messages-container').innerHTML = '';
+            addSystemMessage('对话已重置');
+            closeMenu();
+        } catch (e) {
+            console.error('Reset failed:', e);
+        }
+    });
+
+    // ★ STT 逻辑修改：从空格改为 Ctrl+Space
+    document.addEventListener('keydown', (e) => {
+        const isInput = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
+        if (e.code === 'Space' && (e.ctrlKey || e.metaKey) && !isInput) {
+            e.preventDefault();
+            if (!e.repeat) {
+                toggleSTT();
+            }
+        }
+    });
+
+    // 物理按钮触发语音
+    document.getElementById('btn-voice').addEventListener('click', toggleSTT);
+
+    // 启用 TTS 后端提示
+    fetch('http://localhost:8000/tts/enable', { method: 'POST' }).catch(console.error);
+
     connectWebSocket();
 });

@@ -29,7 +29,7 @@ const int MODEL_W = 500;
 const int MODEL_H = 600;
 const float MODEL_SCALE = 0.8;
 const int CHAT_W = 420;
-const int CHAT_H = 560;
+const int CHAT_H = 600;
 const int SHADOW_PAD = 40;
 
 // 获取当前 EXE 所在的目录

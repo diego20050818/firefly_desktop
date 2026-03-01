@@ -14,6 +14,7 @@ import json
 import time
 import uuid
 from typing import Any, Dict
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,8 +49,17 @@ async def lifespan(app: FastAPI):
         # 初始化STT服务
         logger.info("系统启动：正在初始化 STT 服务...")
         
+        # 核心修复：初始化 TTS 服务
+        logger.info("系统启动：正在连接并初始化 TTS 服务...")
+        if tts_service.connect_to_existing_server():
+            await tts_service.initialize_character()
+            await tts_service.enable_tts()
+            logger.info("TTS 服务初始化完成并已启用。")
+        else:
+            logger.error("无法连接到 TTS 服务器，请检查 main.py 是否已启动。")
+            
     except Exception as e:
-        logger.error(f"MCP 初始化失败: {e}")
+        logger.error(f"系统初始化过程中发生错误: {e}")
 
     yield
 
@@ -433,21 +443,21 @@ def get_cached_tools() -> dict:
 # ===================== stt 模型控制端点 =====================
 @app.post("/stt/start")
 async def start_stt():
-    """开始语音转文字"""
+    """开始录音并等待 VAD 结束"""
     global stt_service
     
-    # 创建新的STT服务实例，避免并发问题
-    if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
-        start_stt.current_stt.stop_listening()
-    
-    start_stt.current_stt = STTService()
-    transcription_task = asyncio.create_task(start_stt.current_stt.start_listening())
-    
-    # 保存任务引用以便稍后访问
-    start_stt.task = transcription_task
+    # 直接使用全局 stt_service 的 VAD 模式
+    # 这将启动一个任务，并在完成后存储结果
+    async def stt_task_wrapper():
+        result = await stt_service.start_listening(mode="vad")
+        start_stt.last_result = result
+        logger.info(f"STT Task finished: {result}")
+
+    start_stt.task = asyncio.create_task(stt_task_wrapper())
+    start_stt.last_result = None
     
     return {
-        "message": "语音识别已开始",
+        "message": "语音识别已启动 (VAD)",
         "status": "listening"
     }
 
@@ -455,22 +465,18 @@ async def start_stt():
 @app.post("/stt/stop")
 async def stop_stt():
     """停止语音转文字并返回结果"""
-    global stt_service
+    # 在 VAD 模式下，通常是等待任务自行结束
+    # 如果强制停止，可以 cancel 任务
+    if hasattr(start_stt, 'task') and not start_stt.task.done():
+        # 我们这里不强制 cancel，而是等待一小会儿看是否已经有了结果
+        # 或者在前端控制逻辑中，stop 只是为了获取结果
+        pass
     
-    if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
-        start_stt.current_stt.stop_listening()
-        
-        # 等待转录完成
-        result = start_stt.current_stt.get_transcription_result()
-        
-        return {
-            "transcription": result,
-            "status": "stopped"
-        }
+    result = getattr(start_stt, 'last_result', "")
     
     return {
-        "message": "没有活动的语音识别会话",
-        "status": "none"
+        "transcription": result,
+        "status": "stopped"
     }
 
 

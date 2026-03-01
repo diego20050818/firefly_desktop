@@ -135,7 +135,6 @@ class STTService:
         speech_started = False
         
         # 内部参数：最大等待语音时间(秒)，防止无限期阻塞
-        # 可以根据需要暴露到配置中
         MAX_WAIT = 30 
         start_wait_time = datetime.utcnow()
 
@@ -154,7 +153,8 @@ class STTService:
                 # 如果已经开始说话，检查是否超时（静默）
                 if speech_started and phrase_time:
                     silence_duration = (now - phrase_time).total_seconds()
-                    if silence_duration > self.phrase_timeout:
+                    # 降低静默检测阈值，提高响应速度
+                    if silence_duration > 0.8: 
                         logger.debug(f"静默时间已达 {silence_duration:.1f}s，停止录音。")
                         break
                 
@@ -163,7 +163,7 @@ class STTService:
                     logger.warning("VAD等待语音超时。")
                     return ""
                 
-                sleep(0.1)
+                sleep(0.05) # 稍微加快轮询频率
 
         if not audio_buffer:
             return ""
@@ -171,7 +171,14 @@ class STTService:
         # 转录捕获到的音频
         try:
             audio_np = np.frombuffer(audio_buffer, dtype=np.int16).astype(np.float32) / 32768.0
-            segments, info = self.model.transcribe(audio_np, beam_size=1, vad_filter=True)
+            # 强化优化：强制中文，beam_size=1，禁用语言检测
+            segments, info = self.model.transcribe(
+                audio_np, 
+                beam_size=1, 
+                vad_filter=True,
+                language="zh",
+                initial_prompt="以下是普通话的句子。"
+            )
             
             transcription = "".join(segment.text for segment in segments).strip()
             logger.info(f"VAD识别结果: {transcription}")
