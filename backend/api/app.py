@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
     """FastAPI 生命周期管理器，在启动时初始化 MCP 环境。"""
     try:
         from tools.stdio_mcp import stdio_mcp_manager
+        
         logger.info("系统启动：正在初始化 Stdio MCP 服务器...")
         await stdio_mcp_manager.initialize()
 
@@ -576,3 +577,14 @@ async def stream_generate_tts(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"TTS streaming error: {e}")
         return {"success": False, "message": str(e)}
+
+@app.get("/emoji/list")
+def list_emojis():
+    try:
+        import os
+        folder = "./static/emoji"
+        logger.info(f"Listing emojis from {folder}")
+        return [f for f in os.listdir(folder) if f.endswith(".png")]
+    except Exception as e:
+        logger.error(f"Failed to list emojis: {e}")
+        return []

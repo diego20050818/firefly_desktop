@@ -154,7 +154,7 @@ class STTService:
                 if speech_started and phrase_time:
                     silence_duration = (now - phrase_time).total_seconds()
                     # 降低静默检测阈值，提高响应速度
-                    if silence_duration > 0.8: 
+                    if silence_duration > 3: 
                         logger.debug(f"静默时间已达 {silence_duration:.1f}s，停止录音。")
                         break
                 

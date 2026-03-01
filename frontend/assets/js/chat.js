@@ -13,6 +13,46 @@ const EMOTION_TAGS = ['墨镜', '猫耳', '裂开', '鄙夷', '生气', '问号'
 const TAG_BUFFER_MAX = 32;
 let tagBuffer = '';
 
+// ===== 表情包功能 =====
+// 获取表情包列表（通过目录遍历，需服务器支持 directory listing）
+let emojiList = [];
+let emoji_possible = 0.5;
+// loadEmojiList - 改用你的后端接口，并用 localhost:8000/static 拼接图片路径
+async function loadEmojiList() {
+    try {
+        const resp = await fetch('http://localhost:8000/emoji/list');
+        emojiList = await resp.json(); // 直接是 ["xxx.png", "yyy.png"]
+        console.log(`[Emoji] 加载了 ${emojiList.length} 张表情包`);
+    } catch (e) {
+        console.warn('[Emoji] 无法加载表情包列表', e);
+    }
+}
+
+// maybeShowEmoji - 图片 src 改为 FastAPI 静态服务地址
+function maybeShowEmoji() {
+    console.log(`[Emoji] maybeShowEmoji called`);
+    if (emojiList.length === 0) return;
+    if (Math.random() > emoji_possible) return;
+
+    const name = emojiList[Math.floor(Math.random() * emojiList.length)];
+    const src = `http://localhost:8000/static/emoji/${name}`;
+
+    const container = document.getElementById('messages-container');
+    const div = document.createElement('div');
+    div.className = 'message-bubble bot-message shadow-sm emoji-bubble';
+
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = 'emoji';
+    img.className = 'chat-emoji-img';
+    img.onload = () => scrollToBottom();  // ← 图片加载完再滚一次
+    img.onerror = () => div.remove();
+
+    div.appendChild(img);
+    container.appendChild(div);
+    scrollToBottom(); // 先滚一次占位
+}
+
 // TTS 状态
 let ttsEnabled = false;
 
@@ -328,12 +368,12 @@ function handleWSMessage(data) {
             break;
         case 'done':
             finalizeReasoning();
-            // ★ 修复重复气泡的核心逻辑：如果正在流式输出，则不再通过 addMessage 创建新气泡
-            // data.full_content 只在非流式或需要同步完整记录时有用
             if (!isStreaming && data.full_content) {
                 addMessage(data.full_content, false, true);
             }
             finalizeAIMessage();
+            maybeShowEmoji(); // 表情包触发
+            // scrollToBottom();
             enableInput();
             break;
         case 'error':
@@ -443,13 +483,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ★ STT 逻辑修改：从空格改为 Ctrl+Space
+    // 长按空格触发
+    let spaceLongPressTimer = null;
+
     document.addEventListener('keydown', (e) => {
-        const isInput = document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA';
-        if (e.code === 'Space' && (e.ctrlKey || e.metaKey) && !isInput) {
+        // 焦点在输入框时不拦截（让用户正常打空格）
+        const isInput = document.activeElement.tagName === 'INPUT' ||
+            document.activeElement.tagName === 'TEXTAREA';
+        if (isInput) return;
+
+        if (e.code === 'Space' && !e.repeat) {
             e.preventDefault();
-            if (!e.repeat) {
+            // 按下超过 500ms 才触发
+            spaceLongPressTimer = setTimeout(() => {
+                spaceLongPressTimer = null;
                 toggleSTT();
+            }, 500);
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') {
+            // 松开时如果计时器还在（没到500ms），说明是短按，取消
+            if (spaceLongPressTimer) {
+                clearTimeout(spaceLongPressTimer);
+                spaceLongPressTimer = null;
             }
         }
     });
@@ -459,6 +517,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 启用 TTS 后端提示
     fetch('http://localhost:8000/tts/enable', { method: 'POST' }).catch(console.error);
+
+    loadEmojiList(); // 预加载表情包列表
 
     connectWebSocket();
 });

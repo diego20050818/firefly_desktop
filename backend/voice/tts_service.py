@@ -157,7 +157,7 @@ class AsyncTTSService:
         if character_name is None:
             character_name = self.name
         if onnx_model_dir is None:
-            onnx_model_dir = tts_config.get('onnx_path', r'E:\firefly_desktop\static\firfly_tts\pro\onnx')
+            onnx_model_dir = tts_config.get('onnx_path', r'..\static\firfly_tts\pro\onnx')
         if language is None:
             language = tts_config.get('language', 'zh')
 

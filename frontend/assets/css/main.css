@@ -357,3 +357,21 @@ input {
     animation-delay: 0.8s;
     background: #ffb6b9;
 }
+
+/* 表情包气泡 */
+.emoji-bubble {
+    padding: 6px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.chat-emoji-img {
+    max-width: 160px;
+    max-height: 160px;
+    width: auto;
+    height: auto;
+    border-radius: 12px;
+    display: block;
+    object-fit: contain;
+}
