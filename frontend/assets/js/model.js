@@ -5,6 +5,8 @@
 window.PIXI = PIXI;
 let live2dModel; 
 let expressionTimer = null; // 用于管理表情回正的定时器
+let scale = 0.5;
+let timeout = 3000;
 
 window.onload = async () => {
     if (!window.Live2DCubismCore) return;
@@ -38,7 +40,7 @@ async function initLive2D() {
         // 居中适配
         live2dModel.anchor.set(0.5, 0.5);
         const fitModel = () => {
-            const baseScale = (window.innerHeight * 0.8) / live2dModel.height;
+            const baseScale = (window.innerHeight * scale) / live2dModel.height;
             live2dModel.scale.set(baseScale);
             live2dModel.x = window.innerWidth / 2;
             live2dModel.y = window.innerHeight / 2;
@@ -83,7 +85,7 @@ async function initLive2D() {
             }
         }, { passive: false });
 
-        createDebugButtons();
+        // createDebugButtons();
 
     } catch (e) { console.error("加载失败:", e); }
 }
@@ -103,7 +105,7 @@ function setExpressionWithTimer(name) {
     // 5秒后重置表情
     expressionTimer = setTimeout(() => {
         console.log("表情回正至默认");
-        live2dModel.expression(""); // 传空字符串通常重置为默认脸
+        live2dModel.expression("猫耳"); // 传空字符串通常重置为默认脸
     }, 5000);
 }
 
@@ -119,8 +121,9 @@ function playMotionWithTimer(group, index) {
     setTimeout(() => {
         console.log("动作回正至 Idle");
         live2dModel.motion('idle', 0);
-    }, 5000);
+    }, timeout);
 }
+
 
 /**
  * 自然说话逻辑
@@ -149,44 +152,81 @@ function speak(duration = 2000) {
     update();
 }
 
-function createDebugButtons() {
-    const btnContainer = document.createElement('div');
-    btnContainer.style.cssText = `
-        position: absolute; top: 10px; left: 10px; z-index: 1000;
-        background: rgba(0, 0, 0, 0.6); padding: 10px; color: white;
-        border-radius: 8px; font-family: "Microsoft YaHei", sans-serif; 
-        max-height: 85vh; overflow-y: auto; pointer-events: auto;
-    `;
-    document.body.appendChild(btnContainer);
+// ============================================================
+// 全局接口 - 供 C++ ExecuteScript 调用
+// ============================================================
 
-    // 按钮逻辑：调用带 Timer 的函数
-    const speakBtn = document.createElement('button');
-    speakBtn.textContent = "🔊 触发说话";
-    speakBtn.style.cssText = 'display:block; width:100%; margin-bottom:12px; padding:8px; background:#4CAF50; color:white; border:none; cursor:pointer; border-radius:4px;';
-    speakBtn.onclick = () => speak(3000);
-    btnContainer.appendChild(speakBtn);
+/**
+ * 触发情绪表情（带自动回正）
+ * 由 C++ 通过 ExecuteScript("window.triggerEmotion('开心')") 调用
+ */
+window.triggerEmotion = function(name) {
+    if (!live2dModel) return;
+    console.log('[Bridge] triggerEmotion:', name);
+    setExpressionWithTimer(name);
+    // 情绪触发时也让模型说几句话，增加生动感
+    speak(1500);
+};
 
-    const specialMotions = [
-        { name: "变身", index: 0 }, { name: "捂手", index: 1 },
-        { name: "拍手", index: 2 }, { name: "思考", index: 3 },
-        { name: "抱胸", index: 4 }, { name: "叉腰", index: 5 },
-        { name: "会萤的", index: 7 }, { name: "免于哀伤", index: 8 }
-    ];
+/**
+ * 触发动作
+ * 支持: 'thinking' (思考)
+ * 由 C++ 通过 ExecuteScript("window.triggerAction('thinking')") 调用
+ */
+window.triggerAction = function(name) {
+    if (!live2dModel) return;
+    console.log('[Bridge] triggerAction:', name);
+    switch (name) {
+        case 'thinking':
+            // "思考" 对应 special 动作组 index 3
+            playMotionWithTimer('special', 3);
+            break;
+        default:
+            console.warn('[Bridge] Unknown action:', name);
+    }
+};
 
-    specialMotions.forEach(m => {
-        const btn = document.createElement('button');
-        btn.textContent = m.name;
-        btn.style.cssText = 'display:block; width:100%; margin:3px 0; cursor:pointer; padding:4px;';
-        btn.onclick = () => playMotionWithTimer("special", m.index);
-        btnContainer.appendChild(btn);
-    });
+// ... existing code ...
 
-    const expressions = ["墨镜", "猫耳", "裂开", "鄙夷", "生气", "问号", "眼泪", "流汗", "呆愣", "开心"];
-    expressions.forEach(name => {
-        const btn = document.createElement('button');
-        btn.textContent = name;
-        btn.style.cssText = 'display:block; width:100%; margin:3px 0; cursor:pointer; padding:4px;';
-        btn.onclick = () => setExpressionWithTimer(name);
-        btnContainer.appendChild(btn);
-    });
-}
+//调试按钮
+// function createDebugButtons() {
+//     const btnContainer = document.createElement('div');
+//     btnContainer.style.cssText = `
+//         position: absolute; top: 10px; left: 10px; z-index: 1000;
+//         background: rgba(0, 0, 0, 0.6); padding: 10px; color: white;
+//         border-radius: 8px; font-family: "Microsoft YaHei", sans-serif; 
+//         max-height: 85vh; overflow-y: auto; pointer-events: auto;
+//     `;
+//     document.body.appendChild(btnContainer);
+
+//     // 按钮逻辑：调用带 Timer 的函数
+//     const speakBtn = document.createElement('button');
+//     speakBtn.textContent = "🔊 触发说话";
+//     speakBtn.style.cssText = 'display:block; width:100%; margin-bottom:12px; padding:8px; background:#4CAF50; color:white; border:none; cursor:pointer; border-radius:4px;';
+//     speakBtn.onclick = () => speak(3000);
+//     btnContainer.appendChild(speakBtn);
+
+//     const specialMotions = [
+//         { name: "变身", index: 0 }, { name: "捂手", index: 1 },
+//         { name: "拍手", index: 2 }, { name: "思考", index: 3 },
+//         { name: "抱胸", index: 4 }, { name: "叉腰", index: 5 },
+//         { name: "会萤的", index: 7 }, { name: "免于哀伤", index: 8 }
+//     ];
+
+//     specialMotions.forEach(m => {
+//         const btn = document.createElement('button');
+//         btn.textContent = m.name;
+//         btn.style.cssText = 'display:block; width:100%; margin:3px 0; cursor:pointer; padding:4px;';
+//         btn.onclick = () => playMotionWithTimer("special", m.index);
+//         btnContainer.appendChild(btn);
+//     });
+
+//     const expressions = ["墨镜", "猫耳", "裂开", "鄙夷", "生气", "问号", "眼泪", "流汗", "呆愣", "开心"];
+//     expressions.forEach(name => {
+//         const btn = document.createElement('button');
+//         btn.textContent = name;
+//         btn.style.cssText = 'display:block; width:100%; margin:3px 0; cursor:pointer; padding:4px;';
+//         btn.onclick = () => setExpressionWithTimer(name);
+//         btnContainer.appendChild(btn);
+//     });
+// }

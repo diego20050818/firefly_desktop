@@ -35,6 +35,37 @@ class AsyncTTSService:
         self.character_loaded = False
         self.name = config.get('chat_bot_name', '流萤')
         self.server_running = False
+        self.is_speaking = False
+        self.tts_enabled = False
+
+    # 状态管理
+    async def enable_tts(self):
+        """启用TTS功能"""
+        if not self._ensure_server():
+            return False
+        
+        self.tts_enabled = True
+        logger.info("TTS enabled")
+        return True
+
+    async def disable_tts(self):
+        """禁用TTS功能"""
+        self.tts_enabled = False
+        # 如果正在播放则停止
+        if self.is_speaking:
+            await self.stop_all_tasks()
+        logger.info("TTS disabled")
+        return True
+
+    def get_tts_status(self):
+        """获取TTS状态"""
+        return {
+            "enabled": self.tts_enabled,
+            "speaking": self.is_speaking,
+            "server_running": self.server_running,
+            "character_loaded": self.character_loaded
+        }
+
 
     # ------------------------------------------------------------------ #
     #  核心修复：探测已有服务，不依赖进程内 server_running 标志            #
@@ -177,11 +208,13 @@ class AsyncTTSService:
             return False
 
     async def generate_speech(self, text, character_name=None, split_sentence=True, save_path=None):
-        if not self._ensure_server():
+        if not self._ensure_server() or not self.tts_enabled:
             return False
+            
         if character_name is None:
             character_name = self.name
 
+        self.is_speaking = True  # 设置正在说话状态
         tts_payload = {
             "character_name": character_name,
             "text": text,
@@ -218,6 +251,7 @@ class AsyncTTSService:
                     stream_obj.stop_stream()
                     stream_obj.close()
                 p.terminate()
+                self.is_speaking = False  # 播放结束后设置为非说话状态
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, make_request_and_stream)
@@ -278,11 +312,12 @@ class AsyncTTSService:
 
     async def stream_generate_speech(self, text, character_name=None, split_sentence=True, save_path=None):
         """流式生成语音 - 逐块播放"""
-        if not self._ensure_server():
+        if not self._ensure_server() or not self.tts_enabled:
             return False
         if character_name is None:
             character_name = self.name
 
+        self.is_speaking = True  # 设置正在说话状态
         tts_payload = {
             "character_name": character_name,
             "text": text,
@@ -319,6 +354,7 @@ class AsyncTTSService:
                     stream_obj.stop_stream()
                     stream_obj.close()
                 p.terminate()
+                self.is_speaking = False  # 播放结束后设置为非说话状态
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, make_request_and_stream)

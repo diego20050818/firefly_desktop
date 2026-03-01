@@ -8,6 +8,9 @@ let currentAiMessageElement = null;
 let currentFullContent = '';
 let currentToolCallElement = null;
 
+const EMOTION_TAGS = ['墨镜','猫耳','裂开','鄙夷','生气','问号','眼泪','流汗','呆愣','开心'];
+const TAG_BUFFER_MAX = 32;
+let tagBuffer = '';
 // 消息滚动到底部
 function scrollToBottom() {
     const container = document.getElementById('messages-container');
@@ -358,6 +361,99 @@ function enableInput() {
     sendButton.disabled = false;
     input.disabled = false;
     input.focus();
+}
+
+// 向 C++ 宿主发送模型控制命令
+function sendModelCommand(cmd) {
+    try {
+        window.chrome.webview.postMessage(cmd);
+    } catch (e) {
+        console.warn('sendModelCommand failed:', e);
+    }
+}
+
+function feedTagBuffer(token) {
+    tagBuffer += token;
+    // 只保留末尾 TAG_BUFFER_MAX 个字符，避免无限增长
+    if (tagBuffer.length > TAG_BUFFER_MAX) {
+        tagBuffer = tagBuffer.slice(-TAG_BUFFER_MAX);
+    }
+    // 匹配 </任意内容/>
+    const match = tagBuffer.match(/<\/([^\/\s]+)\/>/);
+    if (match) {
+        const tag = match[1];
+        if (EMOTION_TAGS.includes(tag)) {
+            sendModelCommand(`emotion:${tag}`);
+        }
+        // 命中后清空缓冲区，避免重复触发
+        tagBuffer = '';
+    }
+}
+
+function handleMessage(data) {
+    console.log('Received message:', data);
+
+    switch (data.type) {
+        case 'token':
+            // ★ 每个 token 都喂给标签检测缓冲区
+            feedTagBuffer(data.content);
+            appendTokenToCurrentMessage(data.content);
+            break;
+        case 'reasoning':
+            // 在推理前完成当前AI消息（如果有的话）
+            if (currentAiMessageElement) {
+                finalizeAIMessage();
+            }
+            // ★ 推理中 → 触发思考动作
+            sendModelCommand('action:thinking');
+            addReasoningMessage(data.content);
+            break;
+        case 'tool_start':
+            // ★ 工具调用中 → 触发思考动作
+            sendModelCommand('action:thinking');
+            addToolCallMessage(data.tool_name, data.arguments);
+            break;
+        case 'tool_end':
+            // 更新工具调用结果显示成功
+            updateToolResult(data.tool_name, data.result, true);
+            break;
+        case 'done':
+            // ★ 完成时清空标签缓冲区
+            tagBuffer = '';
+            // 工具调用完成后，开始新的AI回复气泡
+            if (data.full_content) {
+                addMessage(data.full_content, false, true);
+            }
+            finalizeAIMessage();
+            enableInput();
+            break;
+        case 'error':
+            tagBuffer = '';
+            // 在错误前完成当前AI消息（如果有的话）
+            if (currentAiMessageElement) {
+                finalizeAIMessage();
+            }
+            // 如果是工具执行错误，更新工具结果显示失败
+            if (currentToolCallElement) {
+                updateToolResult('未知工具', data.message, false);
+            } else {
+                addErrorMessage(data.message);
+            }
+            enableInput();
+            break;
+        case 'system':
+            // 在系统消息前完成当前AI消息（如果有的话）
+            if (currentAiMessageElement) {
+                finalizeAIMessage();
+            }
+            addSystemMessage(data.message);
+            break;
+        case 'heartbeat':
+            // 心跳消息，不做处理
+            break;
+        default:
+            console.warn('Unknown message type:', data.type);
+    }
 }
 
 // 页面加载完成后初始化事件监听

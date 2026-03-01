@@ -27,6 +27,7 @@ HWND g_hWndChat = nullptr;
 
 const int MODEL_W = 500;
 const int MODEL_H = 600;
+const float MODEL_SCALE = 0.8;
 const int CHAT_W = 420;
 const int CHAT_H = 560;
 const int SHADOW_PAD = 40;
@@ -172,7 +173,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                             g_webviewChat->get_Settings(&settings);
                             if (settings) settings->put_IsWebMessageEnabled(TRUE);
 
-                            // ★ 重新加入拖动和关闭的消息处理 ★
+
+                            // 拖动和关闭的消息处理与窗口间通信
                             g_webviewChat->add_WebMessageReceived(
                                 Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                                     [](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
@@ -187,9 +189,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
                                             else if (msg == L"close") {
                                                 PostMessage(g_hWndChat, WM_CLOSE, 0, 0);
                                             }
+                                            // --- 新增：情绪标签转发给模型窗口 ---
+                                            // 格式: "emotion:开心"
+                                            else if (msg.length() > 8 && msg.substr(0, 8) == L"emotion:" && g_webviewModel) {
+                                                std::wstring emotionName = msg.substr(8); // 截取冒号后的表情名
+                                                // 转义单引号防止注入（中文标签一般不含引号，但严谨处理）
+                                                std::wstring script = L"window.triggerEmotion('" + emotionName + L"')";
+                                                g_webviewModel->ExecuteScript(script.c_str(), nullptr);
+                                            }
+                                            // --- 新增：动作指令转发给模型窗口 ---
+                                            // 格式: "action:thinking"
+                                            else if (msg.length() > 7 && msg.substr(0, 7) == L"action:" && g_webviewModel) {
+                                                std::wstring actionName = msg.substr(7);
+                                                std::wstring script = L"window.triggerAction('" + actionName + L"')";
+                                                g_webviewModel->ExecuteScript(script.c_str(), nullptr);
+                                            }
                                         }
                                         return S_OK;
                                     }).Get(), nullptr);
+
 
                             RECT bounds; GetClientRect(g_hWndChat, &bounds);
                             g_controllerChat->put_Bounds(bounds);

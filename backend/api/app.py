@@ -27,6 +27,7 @@ from service.llm_register import get_provider_class
 from service.llm_service import ChatCompletionResponse
 from tools.registry_tools import tool_registry
 from voice.stt import STTService
+from voice.tts_service import AsyncTTSService,tts_service
 
 # ===================== 设置全局变量 =====================
 stt_service = STTService()
@@ -429,6 +430,7 @@ def get_cached_tools() -> dict:
     tools = tool_registry.get_cached_tools()
     return {"tools": [tool.dict() for tool in tools]}
 
+# ===================== stt 模型控制端点 =====================
 @app.post("/stt/start")
 async def start_stt():
     """开始语音转文字"""
@@ -506,3 +508,65 @@ async def get_stt_status():
         "status": "active" if is_active else "inactive",
         "is_active": is_active
     }
+
+# ===================== tts 模型控制端点 =====================
+@app.post("/tts/enable")
+async def enable_tts():
+    """启用TTS"""
+    success = await tts_service.enable_tts()
+    if success:
+        return {"success": True, "message": "TTS enabled"}
+    return {"success": False, "message": "Failed to enable TTS"}
+
+@app.post("/tts/disable")
+async def disable_tts():
+    """禁用TTS"""
+    success = await tts_service.disable_tts()
+    if success:
+        return {"success": True, "message": "TTS disabled"}
+    return {"success": False, "message": "Failed to disable TTS"}
+
+@app.get("/tts/status")
+async def get_tts_status():
+    """获取TTS状态"""
+    status = tts_service.get_tts_status()
+    return status
+
+@app.post("/tts/generate")
+async def generate_tts(request: Dict[str, Any]):
+    """生成TTS语音"""
+    text = request.get("text", "")
+    character_name = request.get("character_name", "流萤")
+    
+    if not text:
+        return {"error": "text is required"}
+    
+    try:
+        # 使用TTS服务生成语音
+        success = await tts_service.generate_speech(text, character_name=character_name)
+        if success:
+            return {"success": True, "message": "TTS generated successfully"}
+        else:
+            return {"success": False, "message": "TTS generation failed"}
+    except Exception as e:
+        logger.error(f"TTS generation error: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/tts/stream_generate")
+async def stream_generate_tts(request: Dict[str, Any]):
+    """流式生成TTS语音"""
+    text = request.get("text", "")
+    character_name = request.get("character_name", "流萤")
+    
+    if not text:
+        return {"error": "text is required"}
+    
+    try:
+        success = await tts_service.stream_generate_speech(text, character_name=character_name)
+        if success:
+            return {"success": True, "message": "TTS streamed successfully"}
+        else:
+            return {"success": False, "message": "TTS streaming failed"}
+    except Exception as e:
+        logger.error(f"TTS streaming error: {e}")
+        return {"success": False, "message": str(e)}
