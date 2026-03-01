@@ -99,6 +99,7 @@ function updateToolResult(toolName, result, isSuccess = true) {
 }
 
 // 添加推理消息 - 使用折叠组件
+let currentReasoningContent = '';
 function addReasoningMessage(content) {
     const container = document.getElementById('messages-container');
 
@@ -107,16 +108,19 @@ function addReasoningMessage(content) {
     if (!details || details.dataset.finalized === 'true') {
         details = document.createElement('details');
         details.className = 'reasoning-details';
+        details.open = true; // 默认展开正在进行的思考
         details.innerHTML = `
             <summary class="reasoning-summary">思考中...</summary>
             <div class="reasoning-content"></div>
         `;
         container.appendChild(details);
+        currentReasoningContent = ''; // 重置积累的内容
     }
 
     const contentDiv = details.querySelector('.reasoning-content');
-    const markdownContent = marked.parse(content);
-    contentDiv.innerHTML = markdownContent;
+    currentReasoningContent += content;
+    // 使用 marked 渲染累计的内容
+    contentDiv.innerHTML = marked.parse(currentReasoningContent);
     scrollToBottom();
 }
 
