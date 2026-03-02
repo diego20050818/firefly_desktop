@@ -179,6 +179,9 @@ class AsyncTTSService:
             return False
 
     async def set_reference_audio(self, character_name=None, audio_path=None, audio_text=None, language=None):
+        """
+        设置参考音频 - 先预处理维度问题，再发送给服务器
+        """
         if not self._ensure_server():
             return False
         if character_name is None:
@@ -190,27 +193,66 @@ class AsyncTTSService:
         if language is None:
             language = tts_config.get('language', 'zh')
 
-        # 修复：重新加载音频确保维度正确
+        # ===== 核心修复：预处理音频，保存处理后的版本 =====
+        processed_audio_path = None
         if audio_path:
             try:
                 import soundfile as sf
                 import numpy as np
+                import os
                 
+                # 读取原始音频
                 audio_data, sr = sf.read(audio_path)
-                logger.info(f"Loaded audio shape: {audio_data.shape}, sample_rate: {sr}")
+                logger.info(f"Original audio shape: {audio_data.shape}, sample_rate: {sr}")
                 
-                # 确保是 1D 或 2D (mono/stereo)，不是 3D
+                # ===== 维度修复逻辑 =====
+                # 情况 1: 3D 张量 (batch, samples, channels) → 移除 batch 维度
                 if len(audio_data.shape) == 3:
                     audio_data = np.squeeze(audio_data, axis=0)
-                    logger.warning(f"Squeezed audio to shape: {audio_data.shape}")
+                    logger.warning(f"Removed batch dimension: {audio_data.shape}")
                 
-                # 如果是多通道，转为单声道
+                # 情况 2: 2D 张量 (samples, channels) → 转为单声道
                 if len(audio_data.shape) == 2:
-                    audio_data = audio_data[:, 0]
-                    logger.info(f"Converted to mono, shape: {audio_data.shape}")
-                    
+                    if audio_data.shape[1] > 1:
+                        audio_data = audio_data[:, 0]  # 取第一通道
+                        logger.info(f"Converted to mono: {audio_data.shape}")
+                    else:
+                        audio_data = audio_data[:, 0]
+                
+                # 情况 3: 确保是 float32（genie_tts 可能有格式要求）
+                audio_data = audio_data.astype(np.float32)
+                
+                # ===== 保存处理后的音频到临时文件 =====
+                # 在 config 中指定的 genie_path 下创建缓存目录
+                cache_dir = os.path.join(
+                    tts_config.get('genie_path', r'.\GenieData'),
+                    'reference_audio_cache'
+                )
+                os.makedirs(cache_dir, exist_ok=True)
+                
+                # 使用哈希值作为文件名，避免重复处理相同文件
+                import hashlib
+                original_filename = os.path.basename(audio_path)
+                file_hash = hashlib.md5(original_filename.encode()).hexdigest()[:8]
+                processed_audio_path = os.path.join(
+                    cache_dir,
+                    f"ref_audio_{file_hash}_processed.wav"
+                )
+                
+                # 如果已经处理过这个文件就跳过
+                if not os.path.exists(processed_audio_path):
+                    sf.write(processed_audio_path, audio_data, sr)
+                    logger.success(f"Saved processed audio to: {processed_audio_path}")
+                else:
+                    logger.info(f"Using cached processed audio: {processed_audio_path}")
+                
+                # 使用处理后的音频路径
+                audio_path = processed_audio_path
+                
             except Exception as e:
                 logger.error(f"Audio preprocessing failed: {e}")
+                logger.warning(f"Will try original audio_path: {audio_path}")
+                # 继续使用原始路径，可能会失败
 
         ref_audio_payload = {
             "character_name": character_name,
@@ -218,10 +260,12 @@ class AsyncTTSService:
             "audio_text": audio_text,
             "language": language
         }
+        
         try:
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
-                None, lambda: requests.post(f"{BASE_URL}/set_reference_audio", json=ref_audio_payload, timeout=30))
+                None, lambda: requests.post(f"{BASE_URL}/set_reference_audio", 
+                                        json=ref_audio_payload, timeout=30))
             response.raise_for_status()
             logger.success(f"Reference audio set: {response.json()['message']}")
             return True
