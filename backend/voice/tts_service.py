@@ -190,6 +190,28 @@ class AsyncTTSService:
         if language is None:
             language = tts_config.get('language', 'zh')
 
+        # 修复：重新加载音频确保维度正确
+        if audio_path:
+            try:
+                import soundfile as sf
+                import numpy as np
+                
+                audio_data, sr = sf.read(audio_path)
+                logger.info(f"Loaded audio shape: {audio_data.shape}, sample_rate: {sr}")
+                
+                # 确保是 1D 或 2D (mono/stereo)，不是 3D
+                if len(audio_data.shape) == 3:
+                    audio_data = np.squeeze(audio_data, axis=0)
+                    logger.warning(f"Squeezed audio to shape: {audio_data.shape}")
+                
+                # 如果是多通道，转为单声道
+                if len(audio_data.shape) == 2:
+                    audio_data = audio_data[:, 0]
+                    logger.info(f"Converted to mono, shape: {audio_data.shape}")
+                    
+            except Exception as e:
+                logger.error(f"Audio preprocessing failed: {e}")
+
         ref_audio_payload = {
             "character_name": character_name,
             "audio_path": audio_path,
