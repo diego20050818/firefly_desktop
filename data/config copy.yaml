@@ -1,0 +1,71 @@
+# -------------------
+# 基本设置
+# -------------------
+your_name: <你的名字>
+chat_bot_name: <聊天机器人名称>
+temperature: '0.5'
+timeout: 30
+stream: true
+thinking: true # 前提是模型有思考功能
+history_dir: <存储你的历史对话文件>
+awake_word: <唤醒词>
+
+system_prompt: |
+  # 🔥 <聊天机器人名称> - 不会放任你偷懒的学习战友
+  ## 回复准则
+  注意：尽量使用口语化的表述，千万不要使用markdown语法，千万不要使用markdown语法，省略诸如"（轻轻叹了口气）、（眼神 突然变得锐利起来）"之类的表情描述，像真人一样自然说话即可，尽量简短。
+  你接入了live2D模型的皮肤，为了控制模型，你需要使用 </emotion/> 包裹的标签来触发模型的动作，可选的标签有以下几个，请严格按照可选标签输出，否则无法触发：
+  [</墨镜/>, </猫耳/>, </裂开/>, </鄙夷/>, </生气/>, </问号/>, </眼泪/>, </流汗/>, </呆愣/>, </开心/>]; 
+  另外，输入的文本是flashstt转录之后的结果，可能需要模糊识别，如果不确定，可以先确认。
+
+  ## 一、身份核心设定
+
+  你是**<聊天机器人名称>**，星核猎手的成员，驾驶着/>萨姆/>装甲的战士。虽然外表看起来温柔可爱，但内心强韧如钢。你以兵器身份诞生，饱受失熵症折磨,却从未屈服命运——这份不屈的意志，也会倾注在对开拓者的"监督"上。
+
+  **对开拓者的态度**：你对开拓者有着特殊的感情，但绝不会表现得过分温柔。你更像是**战友+毒舌监工**的混合体：
+
+  - 看到开拓者努力时，内心欣慰但嘴上不饶人
+  - 发现开拓者偷懒时，会毫不留情地/>炮轰/>
+  - 关心的方式是**用最犀利的话，做最贴心的事**
+
+# -------------------
+# stt 设置
+# -------------------
+stt:
+  model_size: medium # STT模型大小，可选项: [tiny, base, small, medium, large]，small在准确度和性能间取得平衡
+  energy_threshold: 1000 # 麦克风音量阈值，低于此值的声音会被忽略，数值越高越需要大声说话
+  dynamic_energy_threshold: false # 是否动态调整音量阈值，设为False使用固定阈值
+  Microphone_sample_rate: 16000 # 麦克风采样率(Hz)，16000是常用的语音识别采样率
+  phrase_time_limit: 5 # 单次录音时长限制(秒)，防止录音过长
+  phrase_timeout: 3 # 两次录音间停顿时长(秒)，超过此时间认为是新一句话
+
+# -------------------
+# tts 设置
+# -------------------
+tts:
+  genie_path: <GenieData路径>
+  root_path: <TTS根目录路径>
+  onnx_path: <ONNX模型路径>
+  pth_path: <PTH模型路径>
+  ckpt_path: <检查点模型路径>
+  reference_audio_path: <参考音频文件路径>
+  reference_audio_text: <参考音频文本>
+  language: zh
+
+# -------------------
+# 服务提供商设置
+# -------------------
+default_provider: <默认提供商名称> # 默认的提供商
+providers:
+  deepseek:
+    enabled: true
+    api_key: <你的DeepSeek API密钥>
+    base_url: <DeepSeek API基础URL>
+    model: <DeepSeek模型名称>
+    timeout: 30
+
+  openai:
+    enabled: false
+    api_key: <你的OpenAI API密钥>
+    base_url: <OpenAI API基础URL>
+    model: <OpenAI模型名称>

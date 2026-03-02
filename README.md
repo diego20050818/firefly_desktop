@@ -1,4 +1,6 @@
-<img src="./static/logo.png" width="280" alt="Firefly" />
+<div style="display: flex; justify-content: center;">
+    <img src="./static/logo.png" width="280" alt="居中图片">
+</div>
 
 # Firefly 流萤
 
@@ -94,6 +96,7 @@ python main.py
 ---
 
 ## 配置说明
+将根目录/data/config copy.yaml中的 copy字样删除，并按照指示修改配置
 
 所有配置集中在 `data/config.yaml`：
 
