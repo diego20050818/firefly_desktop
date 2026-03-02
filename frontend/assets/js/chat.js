@@ -375,7 +375,7 @@ async function stopSTT() {
 // WebSocket
 function connectWebSocket() {
     updateStatus('connecting');
-    ws = new WebSocket('ws://localhost:8000/ws/agent/chat');
+    ws = new WebSocket('ws://localhost:8000/agent/ws/chat');
 
     ws.onopen = () => {
         isConnected = true;

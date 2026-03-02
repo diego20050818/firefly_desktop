@@ -10,28 +10,29 @@
 编码规范: Google Python Style Guide
 """
 
-import json
-import time
-import uuid
+
 from typing import Any, Dict
 import asyncio
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from loguru import logger
 from pydantic import BaseModel
 
-from service.agent import ChatAgent
-from service.llm_register import get_provider_class
-from service.llm_service import ChatCompletionResponse
+from api.settings.setting_router import settingRouter
+from api.agent.agent_router import agent_router
+from api.tools.tools_router import tools_router
+from api.stt.stt_router import stt_router
+from api.tts.tts_router import tts_router
+
 from tools.registry_tools import tool_registry
-from voice.stt import STTService
-from voice.tts_service import AsyncTTSService,tts_service
+from voice.tts_service import tts_service
+
 
 # ===================== 设置全局变量 =====================
-stt_service = STTService()
+# stt_service = STTService()
 
 # ===================== 应用初始化 =====================
 
@@ -70,9 +71,9 @@ async def lifespan(app: FastAPI):
         logger.info("系统关闭：正在清理 MCP 服务器资源...")
         await stdio_mcp_manager.cleanup()
         
-        # 停止STT服务
-        if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
-            start_stt.current_stt.stop_listening()
+        # # 停止STT服务
+        # if hasattr(start_stt, 'current_stt') and start_stt.current_stt:
+        #     start_stt.current_stt.stop_listening()
             
     except Exception as e:
         logger.error(f"清理 MCP 资源失败: {e}")
@@ -80,7 +81,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Firefly AI Gateway",
-    version="0.2.0",
+    version="0.0.1",
     description="AI 桌宠后端 - 支持 MCP 工具调用的智能对话网关",
     lifespan=lifespan,
 )
@@ -100,30 +101,12 @@ import os
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ===================== 会话管理 =====================
-
-# 存储活跃的 ChatAgent 会话（session_id -> ChatAgent）
-active_agent_sessions: Dict[str, ChatAgent] = {}
-
-# 存储活跃的基础 LLM 会话（session_id -> LLMService）
-active_sessions: Dict[str, Any] = {}
-
-
-# ===================== 请求/响应模型 =====================
-
-class AgentChatRequest(BaseModel):
-    """Agent 对话请求模型。
-
-    Attributes:
-        prompt: 用户输入文本。
-        session_id: 会话 ID（可选，用于维持多轮对话）。
-        provider: LLM 提供商，默认 deepseek。
-    """
-
-    prompt: str
-    session_id: str = "default"
-    provider: str = "deepseek"
-
+# ===================== 导入子router =====================
+app.include_router(settingRouter)
+app.include_router(agent_router)
+app.include_router(tools_router)
+app.include_router(stt_router)
+app.include_router(tts_router)
 
 # ===================== 基础端点 =====================
 
@@ -134,7 +117,7 @@ async def read_root() -> dict:
         "message": "welcome to firefly api",
         "logo_url": "/static/logo.png",
         "docs_url": "/docs",
-        "version": "0.2.0",
+        "version": "0.0.1",
     }
 
 
@@ -144,439 +127,67 @@ async def health_check() -> dict:
     return {"status": "ok"}
 
 
-# ===================== Agent 智能对话端点 =====================
+# # ===================== tts 模型控制端点 =====================
+# @app.post("/tts/enable")
+# async def enable_tts():
+#     """启用TTS"""
+#     success = await tts_service.enable_tts()
+#     if success:
+#         return {"success": True, "message": "TTS enabled"}
+#     return {"success": False, "message": "Failed to enable TTS"}
 
-@app.post("/agent/chat")
-async def agent_chat_endpoint(request: AgentChatRequest) -> dict:
-    """带自动工具调用的智能对话接口（推荐使用）。
+# @app.post("/tts/disable")
+# async def disable_tts():
+#     """禁用TTS"""
+#     success = await tts_service.disable_tts()
+#     if success:
+#         return {"success": True, "message": "TTS disabled"}
+#     return {"success": False, "message": "Failed to disable TTS"}
 
-    该接口会自动:
-    1. 将用户输入发送给 LLM
-    2. 如果 LLM 请求调用工具，自动执行 MCP 工具
-    3. 将工具结果反馈给 LLM
-    4. 返回最终的 AI 回复
+# @app.get("/tts/status")
+# async def get_tts_status():
+#     """获取TTS状态"""
+#     status = tts_service.get_tts_status()
+#     return status
 
-    Args:
-        request: 包含 prompt、session_id、provider 的请求体。
-
-    Returns:
-        包含 AI 回复、工具调用历史和使用统计的响应。
-    """
-    session_id = request.session_id
-
-    # 获取或创建 ChatAgent 会话
-    if session_id not in active_agent_sessions:
-        try:
-            active_agent_sessions[session_id] = ChatAgent(
-                provider=request.provider
-            )
-            logger.info(f"创建新的 Agent 会话: {session_id}")
-        except Exception as e:
-            logger.error(f"创建 Agent 会话失败: {e}")
-            return {"error": str(e)}
-
-    agent = active_agent_sessions[session_id]
-
-    try:
-        # 执行智能对话（自动处理工具调用）
-        result = await agent.chat(request.prompt)
-        return {
-            "content": result["content"],
-            "tool_calls_history": result["tool_calls_history"],
-            "reasoning_content": result.get("reasoning_content"),
-            "usage": result.get("usage", {}),
-            "session_id": session_id,
-        }
-    except Exception as e:
-        logger.error(f"Agent 对话处理失败: {e}")
-        return {"error": str(e)}
-
-
-@app.post("/agent/reset")
-async def agent_reset_endpoint(session_id: str = "default") -> dict:
-    """重置 Agent 会话历史。
-
-    Args:
-        session_id: 要重置的会话 ID。
-    """
-    if session_id in active_agent_sessions:
-        active_agent_sessions[session_id].reset()
-        return {"message": f"会话 {session_id} 已重置"}
-    return {"message": f"会话 {session_id} 不存在"}
-
-
-# ===================== 流式对话端点 =====================
-
-@app.post("/agent/stream_chat")
-async def agent_stream_chat_endpoint(request: AgentChatRequest):
-    """流式智能对话接口（SSE - Server-Sent Events）。
-
-    通过 HTTP SSE 流式推送 token 和工具调用状态。
-    支持多轮对话（通过 session_id 维持上下文）。
-
-    每个 SSE 事件格式:
-        data: {"type": "token", "content": "你"}
-        data: {"type": "reasoning", "content": "让我想想..."}
-        data: {"type": "tool_start", "tool_name": "add", "arguments": "..."}
-        data: {"type": "tool_end", "tool_name": "add", "result": "42"}
-        data: {"type": "done", "full_content": "...", "tool_calls_history": [...]}
-
-    Args:
-        request: 包含 prompt、session_id、provider 的请求体。
-
-    Returns:
-        StreamingResponse（text/event-stream）。
-    """
-    from starlette.responses import StreamingResponse
-
-    session_id = request.session_id
-
-    # 获取或创建 ChatAgent 会话
-    if session_id not in active_agent_sessions:
-        try:
-            active_agent_sessions[session_id] = ChatAgent(
-                provider=request.provider
-            )
-            logger.info(f"创建新的 Agent 流式会话: {session_id}")
-        except Exception as e:
-            logger.error(f"创建 Agent 会话失败: {e}")
-
-            async def error_gen():
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
-
-            return StreamingResponse(
-                error_gen(), media_type="text/event-stream"
-            )
-
-    agent = active_agent_sessions[session_id]
-
-    async def event_generator():
-        """SSE 事件生成器。"""
-        try:
-            async for event in agent.stream_chat(request.prompt):
-                # 每个事件作为 SSE data 行发送
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            logger.error(f"流式对话异常: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# ===================== WebSocket Agent 对话（流式） =====================
-
-@app.websocket("/ws/agent/chat")
-async def websocket_agent_chat(websocket: WebSocket) -> None:
-    """WebSocket 流式智能对话端点。
-
-    支持多轮对话和逐 token 推送。
-
-    消息协议 (JSON):
-    客户端发送:
-        {"type": "user_input", "data": {"text": "..."}, "provider": "deepseek"}
-
-    服务端逐 token 推送:
-        {"type": "token", "content": "你"}
-        {"type": "reasoning", "content": "..."}
-        {"type": "tool_start", "tool_name": "add", "arguments": "..."}
-        {"type": "tool_end", "tool_name": "add", "result": "42"}
-        {"type": "done", "full_content": "...", "tool_calls_history": [...]}
-    """
-    await websocket.accept()
-    session_id = str(uuid.uuid4())
-    agent: ChatAgent | None = None
-
-    logger.info(f"WebSocket Agent 连接建立: {session_id}")
-
-    try:
-        while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type", "")
-
-            if msg_type == "user_input":
-                user_text = data.get("data", {}).get("text", "")
-                provider = data.get("provider", "deepseek")
-
-                # 初始化 Agent（首次消息时，后续复用实现多轮对话）
-                if agent is None:
-                    agent = ChatAgent(provider=provider)
-
-                # 流式推送每个事件
-                async for event in agent.stream_chat(user_text):
-                    await websocket.send_json(event)
-
-            elif msg_type == "reset":
-                # 支持客户端主动重置对话
-                if agent is not None:
-                    agent.reset()
-                    await websocket.send_json({
-                        "type": "system",
-                        "message": "对话已重置",
-                    })
-
-            elif msg_type == "heartbeat":
-                await websocket.send_json({"type": "heartbeat"})
-
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket Agent 连接断开: {session_id}")
-    except Exception as e:
-        logger.error(f"WebSocket Agent 异常: {e}")
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": str(e),
-            })
-        except Exception:
-            pass
-
-
-# ===================== 基础 LLM 对话端点（保留兼容） =====================
-
-@app.post("/chat/{provider}")
-async def chat_endpoint(
-    provider: str,
-    request: Dict[str, Any],
-) -> dict:
-    """基础 LLM 对话接口（无自动工具调用）。
-
-    Args:
-        provider: LLM 提供商名称。
-        request: 包含 prompt 和 session_id 的请求体。
-    """
-    user_prompt = request.get("prompt", "")
-    session_id = request.get("session_id", "default")
-
-    if session_id not in active_sessions:
-        provider_cls = get_provider_class(provider)
-        active_sessions[session_id] = provider_cls()
-
-    client = active_sessions[session_id]
-    response: ChatCompletionResponse = await client.chat_completion(
-        user_prompt
-    )
-
-    return {
-        "content": response.content,
-        "tool_calls": response.tool_calls,
-        "usage": response.usage,
-    }
-
-
-@app.websocket("/ws/chat/{provider}")
-async def websocket_chat(websocket: WebSocket, provider: str) -> None:
-    """基础 WebSocket 对话（无自动工具调用）。
-
-    Args:
-        websocket: WebSocket 连接。
-        provider: LLM 提供商名称。
-    """
-    await websocket.accept()
-
-    provider_cls = get_provider_class(provider)
-    client = provider_cls()
-
-    while True:
-        try:
-            data = await websocket.receive_json()
-            user_prompt = data.get("prompt", "")
-
-            response: ChatCompletionResponse | None = (
-                await client.chat_completion(user_prompt)
-            )
-
-            if response is None:
-                logger.warning("LLM 返回空响应")
-                continue
-
-            await websocket.send_json({
-                "type": "response",
-                "content": response.content,
-                "tool_calls": response.tool_calls,
-                "finish_reason": response.finish_reason,
-            })
-        except Exception as e:
-            await websocket.send_json({
-                "type": "error",
-                "message": str(e),
-            })
-            break
-
-
-# ===================== 工具查询端点 =====================
-
-@app.get("/tools/available")
-async def list_available_tools() -> dict:
-    """列出所有可用的 MCP 工具（触发重新扫描）。"""
-    tools = await tool_registry.get_all_tools()
-    return {
-        "tools": [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            }
-            for tool in tools
-        ]
-    }
-
-
-@app.get("/tools")
-async def get_tools() -> dict:
-    """获取所有可用工具列表。"""
-    tools = await tool_registry.get_all_tools()
-    return {"tools": [tool.dict() for tool in tools]}
-
-
-@app.get("/tools/cached")
-def get_cached_tools() -> dict:
-    """获取缓存的工具列表（不触发重新扫描）。"""
-    tools = tool_registry.get_cached_tools()
-    return {"tools": [tool.dict() for tool in tools]}
-
-# ===================== stt 模型控制端点 =====================
-@app.post("/stt/start")
-async def start_stt():
-    """开始录音并等待 VAD 结束"""
-    global stt_service
+# @app.post("/tts/generate")
+# async def generate_tts(request: Dict[str, Any]):
+#     """生成TTS语音"""
+#     text = request.get("text", "")
+#     character_name = request.get("character_name", "流萤")
     
-    # 直接使用全局 stt_service 的 VAD 模式
-    # 这将启动一个任务，并在完成后存储结果
-    async def stt_task_wrapper():
-        result = await stt_service.start_listening(mode="vad")
-        start_stt.last_result = result
-        logger.info(f"STT Task finished: {result}")
-
-    start_stt.task = asyncio.create_task(stt_task_wrapper())
-    start_stt.last_result = None
+#     if not text:
+#         return {"error": "text is required"}
     
-    return {
-        "message": "语音识别已启动 (VAD)",
-        "status": "listening"
-    }
+#     try:
+#         # 使用TTS服务生成语音
+#         success = await tts_service.generate_speech(text, character_name=character_name)
+#         if success:
+#             return {"success": True, "message": "TTS generated successfully"}
+#         else:
+#             return {"success": False, "message": "TTS generation failed"}
+#     except Exception as e:
+#         logger.error(f"TTS generation error: {e}")
+#         return {"success": False, "message": str(e)}
 
-
-@app.post("/stt/stop")
-async def stop_stt():
-    """停止语音转文字并返回结果"""
-    # 在 VAD 模式下，通常是等待任务自行结束
-    # 如果强制停止，可以 cancel 任务
-    if hasattr(start_stt, 'task') and not start_stt.task.done():
-        # 我们这里不强制 cancel，而是等待一小会儿看是否已经有了结果
-        # 或者在前端控制逻辑中，stop 只是为了获取结果
-        pass
+# @app.post("/tts/stream_generate")
+# async def stream_generate_tts(request: Dict[str, Any]):
+#     """流式生成TTS语音"""
+#     text = request.get("text", "")
+#     character_name = request.get("character_name", "流萤")
     
-    result = getattr(start_stt, 'last_result', "")
+#     if not text:
+#         return {"error": "text is required"}
     
-    return {
-        "transcription": result,
-        "status": "stopped"
-    }
-
-
-@app.post("/stt/transcribe")
-async def transcribe_audio(duration: int = 10):
-    """录音指定时间并返回转录结果（使用全局服务，避免重载模型）"""
-    result = await stt_service.start_listening(duration=duration, mode="continuous")
-    
-    return {
-        "transcription": result,
-        "duration": duration
-    }
-
-
-@app.post("/stt/transcribe_vad")
-async def transcribe_audio_vad():
-    """使用 VAD 智能检测说话和静默，捕获单次说话内容"""
-    result = await stt_service.start_listening(mode="vad")
-    
-    return {
-        "transcription": result,
-        "mode": "vad"
-    }
-
-
-@app.get("/stt/status")
-async def get_stt_status():
-    """获取当前STT服务状态"""
-    # 这里需要根据实际情况判断是否正在监听
-    is_active = False
-    if hasattr(start_stt, 'current_stt'):
-        is_active = getattr(start_stt.current_stt, 'listening_active', False)
-    
-    return {
-        "status": "active" if is_active else "inactive",
-        "is_active": is_active
-    }
-
-# ===================== tts 模型控制端点 =====================
-@app.post("/tts/enable")
-async def enable_tts():
-    """启用TTS"""
-    success = await tts_service.enable_tts()
-    if success:
-        return {"success": True, "message": "TTS enabled"}
-    return {"success": False, "message": "Failed to enable TTS"}
-
-@app.post("/tts/disable")
-async def disable_tts():
-    """禁用TTS"""
-    success = await tts_service.disable_tts()
-    if success:
-        return {"success": True, "message": "TTS disabled"}
-    return {"success": False, "message": "Failed to disable TTS"}
-
-@app.get("/tts/status")
-async def get_tts_status():
-    """获取TTS状态"""
-    status = tts_service.get_tts_status()
-    return status
-
-@app.post("/tts/generate")
-async def generate_tts(request: Dict[str, Any]):
-    """生成TTS语音"""
-    text = request.get("text", "")
-    character_name = request.get("character_name", "流萤")
-    
-    if not text:
-        return {"error": "text is required"}
-    
-    try:
-        # 使用TTS服务生成语音
-        success = await tts_service.generate_speech(text, character_name=character_name)
-        if success:
-            return {"success": True, "message": "TTS generated successfully"}
-        else:
-            return {"success": False, "message": "TTS generation failed"}
-    except Exception as e:
-        logger.error(f"TTS generation error: {e}")
-        return {"success": False, "message": str(e)}
-
-@app.post("/tts/stream_generate")
-async def stream_generate_tts(request: Dict[str, Any]):
-    """流式生成TTS语音"""
-    text = request.get("text", "")
-    character_name = request.get("character_name", "流萤")
-    
-    if not text:
-        return {"error": "text is required"}
-    
-    try:
-        success = await tts_service.stream_generate_speech(text, character_name=character_name)
-        if success:
-            return {"success": True, "message": "TTS streamed successfully"}
-        else:
-            return {"success": False, "message": "TTS streaming failed"}
-    except Exception as e:
-        logger.error(f"TTS streaming error: {e}")
-        return {"success": False, "message": str(e)}
+#     try:
+#         success = await tts_service.stream_generate_speech(text, character_name=character_name)
+#         if success:
+#             return {"success": True, "message": "TTS streamed successfully"}
+#         else:
+#             return {"success": False, "message": "TTS streaming failed"}
+#     except Exception as e:
+#         logger.error(f"TTS streaming error: {e}")
+#         return {"success": False, "message": str(e)}
 
 @app.get("/emoji/list")
 def list_emojis():
