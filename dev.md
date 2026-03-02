@@ -1,12 +1,14 @@
-# AI桌宠项目开发文档
+# AI桌宠 Firefly 开发文档
 
-> **项目定位**: 对标MiniMax、阶跃AI等桌面AI助手的情感Live2D桌面通用AI桌宠  
+> **项目定位**: 对标阶跃AI、MiniMax的情感Live2D桌面AI助手  
 > **核心能力**: 人格模拟、语音对话、电脑操控、工具调用、Live2D渲染  
-> **后端架构**: LangChain + LlamaIndex + FastMCP
+> **后端架构**: FastAPI + LangChain + DeepSeek + FastMCP  
+> **前端架构**: Windows C++ (WebView2) + React + Live2D Cubism SDK  
+> **更新日期**: 2026-03-02
 
 ---
 
-## 第一部分:项目甘特图
+## 第一部分:项目开发时间线
 
 ```mermaid
 gantt
@@ -69,838 +71,381 @@ gantt
 
 ## 第二部分:技术选型与技术细节
 
-### 2.1 整体架构设计
+### 2.1 整体系统架构
 
-**架构模式**: 前后端分离 + WebSocket实时通信 + Agent编排
+**架构模式**: WebView2桌面应用 + FastAPI后端 + 实时WebSocket通信
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   前端 (Tauri)                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │   React UI  │  │ Live2D渲染层 │  │ WebSocket  │ │
-│  │   组件层    │  │  (Canvas)    │  │   客户端    │ │
-│  └─────────────┘  └──────────────┘  └────────────┘ │
-│         │                │                  │        │
-│         └────────────────┴──────────────────┘        │
-│                          │                            │
-│                  Tauri Rust Core                      │
-│                 (系统调用、窗口管理)                    │
-└──────────────────────────┬──────────────────────────┘
-                           │ WebSocket
-                           │
-┌──────────────────────────┴──────────────────────────┐
-│              Python后端 (FastAPI)                    │
-│  ┌─────────────────────────────────────────────┐   │
-│  │         Agent编排层 (LangChain)              │   │
-│  │  ┌──────────┐ ┌────────────┐ ┌───────────┐ │   │
-│  │  │ReAct Agent│ │ Tool Router│ │ Memory    │ │   │
-│  │  │对话引擎   │ │  工具路由  │ │ 上下文管理│ │   │
-│  │  └──────────┘ └────────────┘ └───────────┘ │   │
-│  └─────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │       知识库层 (LlamaIndex)                  │   │
-│  │  ┌──────────┐ ┌────────────┐ ┌───────────┐ │   │
-│  │  │文档索引  │ │ Query Engine│ │ Retriever │ │   │
-│  │  │ RAG管道  │ │  查询引擎  │ │ 检索器    │ │   │
-│  │  └──────────┘ └────────────┘ └───────────┘ │   │
-│  └─────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │         工具层 (FastMCP)                      │   │
-│  │  ┌──────────┐ ┌────────────┐ ┌───────────┐ │   │
-│  │  │电脑操控  │ │ 文件系统   │ │ 浏览器控制│ │   │
-│  │  │MCP Server│ │  MCP Server│ │MCP Server │ │   │
-│  │  └──────────┘ └────────────┘ └───────────┘ │   │
-│  └─────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │           数据层                              │   │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────────┐ │   │
-│  │  │向量数据库│ │配置管理  │ │  状态管理    │ │   │
-│  │  │(Chroma) │ │(Pydantic)│ │ (Redis可选)  │ │   │
-│  │  └─────────┘ └──────────┘ └──────────────┘ │   │
-│  └─────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │          外部服务层                           │   │
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────────┐ │   │
-│  │  │DeepSeek │ │ Whisper  │ │  Azure TTS   │ │   │
-│  │  │   LLM   │ │   STT    │ │    语音合成  │ │   │
-│  │  └─────────┘ └──────────┘ └──────────────┘ │   │
-│  └─────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Windows本机 (firefly_frontend)               │
+│                         main.cpp                                │
+├─────────────────────────────────────────────────────────────────┤
+│                      WebView2 容器                               │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │               React渲染进程 (index.html)              │   │
+│  │  ┌────────────────────────────────────────────────┐   │   │
+│  │  │  主UI容器    │  Live2D Canvas   │  输入框      │   │   │
+│  │  │  对话面板    │  Pixi.js渲染    │  语音按钮    │   │   │
+│  │  │  设置面板    │  Live2D模型     │  发送按钮    │   │   │
+│  │  └────────────────────────────────────────────────┘   │   │
+│  │                                                         │   │
+│  │         WebSocket (ws://localhost:8000)               │   │
+│  └────────────────────┬────────────────────────────────────┘   │
+└─────────────────────────┼──────────────────────────────────────┘
+                          │ WebSocket
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   Python后端 (FastAPI)                           │
+│                    main.py (port 8000)                           │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  FastAPI应用 (api/app.py)                               │   │
+│  │  ┌────────────────────────────────────────────────────┐ │   │
+│  │  │  /agent/chat (REST)      |  /ws/agent/chat (WS)  │ │   │
+│  │  │  /chat/{provider}        |  /tools/*            │ │   │
+│  │  └────────────────────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  ChatAgent核心引擎 (service/agent.py)                   │   │
+│  │  ┌────────────────────────────────────────────────────┐ │   │
+│  │  │  LangChain ReAct Agent                            │ │   │
+│  │  │  • 对话理解与生成                                │ │   │
+│  │  │  • 工具调用循环 (Tool Calling Loop)              │ │   │
+│  │  │  • 上下文记忆管理                                │ │   │
+│  │  └────────────────────────────────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  LLM服务层 (service/)                                   │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │   │
+│  │  │DeepSeek      │  │Embedding     │  │其他LLM       │   │   │
+│  │  │(service/deep-│  │模型          │  │提供商        │   │   │
+│  │  │seek.py)      │  │              │  │              │   │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  语音处理层 (voice/)                                    │   │
+│  │  ┌──────────────┐  ┌──────────────┐                      │   │
+│  │  │STT 语音转文字│  │TTS 文字转语音│                      │   │
+│  │  │(faster-      │  │(GeniTTS)     │                      │   │
+│  │  │whisper)      │  │              │                      │   │
+│  │  └──────────────┘  └──────────────┘                      │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  工具层 (tools/)                                        │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │   │
+│  │  │Fast MCP      │  │Local工具     │  │工具注册表    │   │   │
+│  │  │(launch_app)  │  │(add, open)   │  │(registry)    │   │   │
+│  │  │              │  │              │  │              │   │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  知识库与存储 (ChromaDB、配置)                           │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │   │
+│  │  │向量数据库    │  │配置文件      │  │对话历史      │   │   │
+│  │  │(ChromaDB)    │  │(config.yaml) │  │(history/)    │   │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────┘   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**关键通信流程**：
+
+```
+1. 用户在WebView2输入 (文本或语音)
+           ↓
+2. React组件发送 WebSocket/HTTP 请求到后端
+           ↓
+3. FastAPI接收，转发给 ChatAgent
+           ↓
+4. ChatAgent调用 LLM (DeepSeek) 进行推理
+           ↓
+5. 若LLM返回tool_calls，执行对应工具
+           ↓
+6. 返回AI文本响应，触发TTS合成语音
+           ↓
+7. 返回WebSocket消息，包管理情感TAG
+           ↓
+8. 前端React解析响应：
+   • 显示文字内容
+   • 触发Live2D动画
+   • 播放合成语音
 ```
 
 ### 2.2 技术栈详解
 
-#### 2.2.1 前端技术栈 (Tauri + React)
+#### 2.2.1 前端技术栈 (Windows C++ + WebView2 + React)
 
-| 技术                  | 版本  | 用途         | 选型理由                         |
-| --------------------- | ----- | ------------ | -------------------------------- |
-| **Tauri**             | 2.x   | 桌面应用框架 | 轻量级、安全、跨平台、性能优异   |
-| **Rust**              | 1.75+ | 系统层开发   | 高性能、内存安全、系统调用能力强 |
-| **React**             | 18.x  | UI层框架     | 生态丰富、组件化、易于开发       |
-| **TypeScript**        | 5.x   | 类型系统     | 提高代码质量和可维护性           |
-| **Vite**              | 5.x   | 构建工具     | 快速的开发体验                   |
-| **Pixi.js/WebGL**     | 7.x   | Live2D渲染   | 高性能2D渲染引擎                 |
-| **live2d-cubism-web** | 4.x   | Live2D SDK   | 官方Web SDK支持                  |
-| **Zustand**           | 4.x   | 状态管理     | 轻量级、易用的React状态管理      |
-| **TailwindCSS**       | 3.x   | 样式框架     | 快速UI开发                       |
+**本机应用层 (C++)**
 
-#### 2.2.2 后端技术栈 (Python)
+| 技术         | 版本 | 用途              | 说明                                      |
+|--------------|------|-------------------|-------------------------------------------|
+| **C++**      | 17   | 核心编程语言      | Visual Studio 2019+ 编译                 |
+| **WebView2** | Latest| 浏览器嵌入        | Windows原生Web容器，比Electron更轻量     |
+| **WRL (Windows Runtime Library)** | - | COM编程 | WebView2 API调用 |
+| **WIL (Windows Implementation Library)** | Latest | 辅助库 | COM异常处理 |
 
-**核心框架**
+**WebView2容器中的Web前端**
 
-| 技术           | 版本   | 用途       | 选型理由                   |
-| -------------- | ------ | ---------- | -------------------------- |
-| **Python**     | 3.11+  | 后端语言   | AI生态丰富、开发效率高     |
-| **FastAPI**    | 0.109+ | Web框架    | 高性能、异步支持、自动文档 |
-| **Uvicorn**    | 0.27+  | ASGI服务器 | 高性能异步服务器           |
-| **Pydantic**   | 2.x    | 数据验证   | 类型安全、配置管理         |
-| **WebSockets** | 12.x   | 实时通信   | 双向通信、低延迟           |
+| 技术              | 版本  | 用途              | 说明                                      |
+|-------------------|-------|-------------------|-------------------------------------------|
+| **HTML5**         | Latest| 页面结构          | 标准Web页面 (pages/chat/index.html)      |
+| **React**         | 18.x  | UI框架            | 组件化前端开发                            |
+| **TypeScript**    | 5.x   | 类型系统          | 类型安全的JavaScript                     |
+| **Tailwind CSS**  | 3.x   | 样式框架          | 快速响应式设计                            |
+| **Pixi.js**       | 8.x   | 2D渲染引擎        | WebGL高性能渲染                           |
+| **live2d-cubism-web** | 5-r4 | Live2D SDK | 官方Live2D Web SDK                       |
+| **WebSocket**     | 原生  | 实时通信          | 与后端双向通信                            |
 
-**AI & Agent编排层**
+**前端核心功能**  
 
-| 技术              | 版本  | 用途           | 选型理由                                     |
-| ----------------- | ----- | -------------- | -------------------------------------------- |
-| **LangChain**     | 0.3.x | Agent编排框架  | 完整的Agent生态、丰富的工具链、ReAct支持     |
-| **LangGraph**     | 0.2.x | 工作流编排     | 状态机式Agent流程控制、可视化调试            |
-| **LlamaIndex**    | 0.11.x| RAG框架        | 专业的文档索引和检索、与LangChain无缝集成    |
-| **FastMCP**       | Latest| MCP协议实现    | 轻量级MCP服务器、支持电脑操控                |
-| **DeepSeek API**  | Latest| LLM服务        | 性价比高、中文友好、推理能力强               |
+### 2.3 核心模块说明
 
-**知识库与向量数据库**
+#### 2.3.1 后端核心文件结构
 
-| 技术                      | 版本  | 用途         | 选型理由                     |
-| ------------------------- | ----- | ------------ | ---------------------------- |
-| **ChromaDB**              | 0.5.x | 向量数据库   | 轻量级、易于部署、Python原生 |
-| **FAISS**                 | 1.8.x | 向量检索     | 高性能、适合大规模数据       |
-| **Sentence-Transformers** | 3.x   | 文本嵌入     | 高质量向量表示、支持中文     |
-| **bge-large-zh**          | Latest| 中文嵌入模型 | 中文语义理解能力强           |
+根据实际代码，后端采用以下模块化设计：
 
-**语音处理**
+```
+backend/
+├── main.py                    # 并发运行FastAPI+FastMCP的入口
+├── api/
+│   ├── app.py                # FastAPI应用定义,含所有HTTP和WebSocket路由
+│   └── __init__.py
+├── service/
+│   ├── agent.py              # 核心ChatAgent,实现LangChain ReAct循环+工具调用
+│   ├── deepseek.py           # DeepSeek LLM服务实现(AsyncOpenAI)
+│   ├── llm_service.py        # LLM服务基类和数据类定义
+│   ├── llm_register.py       # LLM服务提供商注册中心
+│   └── __pycache__/
+├── tools/
+│   ├── launch_app.py         # FastMCP本地工具实现(add, open_application等)
+│   ├── registry_tools.py     # 工具注册表,管理所有可用工具
+│   ├── stdio_mcp.py          # 标准IO MCP协议通信实现
+│   ├── utils.py              # 工具辅助函数
+│   ├── __init__.py
+│   └── __pycache__/
+├── voice/
+│   ├── stt.py                # Faster Whisper语音识别实现
+│   ├── tts_service.py        # GeniTTS语音合成实现
+│   ├── convert_tts_model.py  # TTS模型转换工具
+│   └── __pycache__/
+├── requirements.txt          # pip依赖列表
+├── pyproject.toml            # Poetry项目配置
+└── README.md
+```
 
-| 技术             | 版本       | 用途          | 选型理由                       |
-| ---------------- | ---------- | ------------- | ------------------------------ |
-| **Whisper**      | OpenAI API | 语音识别(STT) | 准确率高、多语言支持           |
-| **Azure TTS**    | Latest     | 语音合成      | 自然度高、支持定制音色、音素   |
-| **Edge-TTS**     | Latest     | 备用TTS       | 免费、质量尚可                 |
-| **pydub**        | 0.25.x     | 音频处理      | 格式转换、切片处理             |
+#### 2.3.2 关键文件功能说明
 
-**工具与电脑操控**
+| 文件 | 核心功能 | 重要方法 |
+|------|---------|---------|
+| `main.py` | FastAPI和FastMCP并发启动,TTS预加载 | `main()`, `run_fastapi()`, `run_fastmcp()`, `load_tts_models()` |
+| `api/app.py` | API路由定义,WebSocket连接管理,生命周期管理 | `lifespan()`, `/agent/chat`, `/ws/agent/chat` |
+| `service/agent.py` | ReAct Agent循环,工具调用执行,消息管理 | `process_message()`, `execute_tool_call()`, `convert_mcp_tools_to_openai_schema()` |
+| `service/deepseek.py` | 与DeepSeek API通信,消息格式转换 | `chat_completion()`, `chat_completion_stream()` |
+| `tools/launch_app.py` | FastMCP服务器实现,本地工具(add/open) | `add()`, `open_application()`, `mcp.run_async()` |
+| `tools/registry_tools.py` | 工具管理和注册 | `get_cached_tools()`, `add_tool()` |
+| `voice/stt.py` | Faster Whisper实时语音识别 | `recognize()`, `recognize_from_mic()` |
+| `voice/tts_service.py` | GeniTTS文字转语音,音素提取 | `synthesize()`, `initialize_character()` |
 
-| 技术            | 版本  | 用途         | 选型理由                |
-| --------------- | ----- | ------------ | ----------------------- |
-| **FastMCP**     | Latest| MCP框架      | 轻量级、易于集成        |
-| **PyAutoGUI**   | 0.9.x | 鼠标键盘控制 | 跨平台、API简单         |
-| **Playwright**  | 1.x   | 浏览器自动化 | 现代化、稳定性好        |
-| **psutil**      | 5.x   | 系统监控     | 获取系统信息            |
+#### 2.3.3 LangChain ReAct Agent工作流
 
-#### 2.2.3 开发工具链
+实际代码中Agent的执行流程:
 
-| 工具         | 用途                          |
-| ------------ | ----------------------------- |
-| **Poetry**   | Python依赖管理                |
-| **Black**    | Python代码格式化              |
-| **Ruff**     | Python代码检查                |
-| **pytest**   | 单元测试                      |
-| **ESLint**   | JavaScript/TypeScript代码检查 |
-| **Prettier** | 前端代码格式化                |
+```python
+# 1. 用户输入 → FastAPI接收
+msg = {"content": "帮我计算15+27"}
 
-### 2.3 核心技术实现细节
+# 2. ChatAgent.process_message() 被调用
+# 核心循环:
+while iteration < max_iterations:
+    # 3. 调用LLM (DeepSeek)
+    response = await deepseek_service.chat_completion(
+        messages=messages,
+        tools=tool_schema_list  # 转换后的OpenAI格式
+    )
+    
+    # 4. 检查LLM返回
+    if response.finish_reason == "tool_calls":
+        # 有工具调用
+        for tool_call in response.tool_calls:
+            # 5. 执行工具
+            result = await execute_tool_call(tool_call)
+            
+            # 6. 将结果作为tool消息追加
+            messages.append({
+                "role": "assistant",
+                "tool_calls": [tool_call]
+            })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result
+            })
+    
+    elif response.finish_reason == "stop":
+        # 获得最终答案
+        return response.content
+```
 
-#### 2.3.1 WebSocket通信协议设计
+#### 2.3.4 WebSocket通信流程
 
-**消息格式 (JSON)**
+前端和后端通过WebSocket实时通信:
 
-```json
-{
-  "type": "message_type",
-  "id": "unique_message_id",
-  "timestamp": 1706401234567,
-  "data": {
-    // 消息具体内容
-  }
+```
+1. 前端(WebView2) 连接到 ws://localhost:8000/ws/agent/chat
+   ↓
+2. FastAPI的 websocket_endpoint() 接收连接
+   ↓
+3. 前端发送消息: {"type": "message", "content": "你好"}
+   ↓
+4. 后端接收并转发给 ChatAgent.process_message()
+   ↓
+5. Agent返回响应: {"text": "你好!", "emotion": "开心", ...}
+   ↓
+6. 后端通过WebSocket发送响应给前端
+   ↓
+7. 前端React组件:
+   - 显示文字
+   - 触发TTS合成语音  
+   - 驱动Live2D动画
+   - 播放语音
+```
+
+### 2.4 前端架构详解
+
+#### 2.4.1 WebView2 + React集成
+
+**main.cpp** - Windows原生入口:
+
+```cpp
+// 关键代码片段
+// 1. 创建透明窗口 (支持Live2D叠加)
+CreateWindowEx(
+    WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
+    L"FireflyDesktop", L"Firefly", WS_POPUP,
+    ...
+)
+
+// 2. 初始化WebView2
+CreateCoreWebView2EnvironmentWithOptions(...)
+
+// 3. 加载网页
+webview->Navigate(L"E:/firefly_desktop/frontend/index.html")
+```
+
+**pages/chat/index.html** - React应用入口:
+
+- 使用Tailwind CSS进行样式
+- 集成Live2D Cubism SDK
+- WebSocket客户端实现
+- 丰富的UI组件
+
+**特色功能**:
+- 拖动窗口功能
+- 设置面板
+- 实时状态指示
+- TTS控制开关
+- 语音输入按钮
+
+#### 2.4.2 Live2D集成关键点
+
+```html
+<!-- Canvas用于Live2D渲染 -->
+<canvas id="live2d-canvas"></canvas>
+
+<!-- 使用Pixi.js + Live2D Cubism SDK -->
+<script src="CubismSdkForWeb-5-r.4/Core/live2dcubismcore.min.js"></script>
+<script src="assets/js/pixi.min.js"></script>
+<script src="assets/js/cubism4.min.js"></script>
+<script src="assets/js/model.js"></script>
+```
+
+关键组件:
+- **Model管理**: 加载.model3.json模型
+- **动画播放**: PlayMotion, SetExpression
+- **参数控制**: 嘴型(Mouth), 眼睛(Eyes)等
+- **事件处理**: 点击、拖动响应
+
+#### 2.4.3 实时通信实现
+
+```javascript
+// WebSocket客户端
+const ws = new WebSocket('ws://localhost:8000/ws/agent/chat');
+
+ws.onmessage = async (event) => {
+    const response = JSON.parse(event.data);
+    
+    // 显示文字
+    displayMessage(response.text);
+    
+    // 触发TTS
+    if (response.audio) {
+        playAudio(response.audio);
+    }
+    
+    // 触发Live2D动画
+    if (response.emotion) {
+        playAnimation(response.emotion);
+    }
+};
+
+// 发送消息
+function sendMessage(text) {
+    ws.send(JSON.stringify({
+        type: "message",
+        content: text
+    }));
 }
 ```
 
-**消息类型定义**
+---
 
-| 消息类型        | 方向      | 说明         | 数据结构                           |
-| --------------- | --------- | ------------ | ---------------------------------- |
-| `user_input`    | 前端→后端 | 用户文本输入 | `{text: string}`                   |
-| `voice_input`   | 前端→后端 | 用户语音输入 | `{audio: base64}`                  |
-| `ai_response`   | 后端→前端 | AI文本响应   | `{text: string, emotion: string}`  |
-| `voice_output`  | 后端→前端 | AI语音输出   | `{audio: base64, phonemes: array}` |
-| `animation`     | 后端→前端 | 动画控制     | `{name: string, params: object}`   |
-| `system_action` | 后端→前端 | 系统操作通知 | `{action: string, result: string}` |
-| `tool_calling`  | 后端→前端 | 工具调用中   | `{tool: string, status: string}`   |
-| `error`         | 双向      | 错误信息     | `{code: number, message: string}`  |
-| `heartbeat`     | 双向      | 心跳检测     | `{}`                               |
+## 第三部分:开发规划
 
-#### 2.3.2 LangChain Agent架构设计
+### 当前状态 (2026-03-02)
 
-**基于ReAct模式的对话Agent**
+**已完成**:
+- ✅ FastAPI后端框架搭建
+- ✅ Faster Whisper STT集成
+- ✅ GeniTTS TTS集成  
+- ✅ LangChain ReAct Agent实现
+- ✅ FastMCP工具框架
+- ✅ DeepSeek API集成
+- ✅ WebView2 + React前端
+- ✅ Live2D Cubism SDK集成
+- ✅ WebSocket实时通信
 
-```python
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.tools import BaseTool
+**进行中**:
+- 🔄 Live2D口型同步算法优化
+- 🔄 情感识别和动画映射
+- 🔄 对话历史管理完善
+- 🔄 用户信息持久化
 
-@dataclass
-class DialogConfig:
-    """对话配置"""
-    api_key: str
-    model: str = "deepseek-chat"
-    temperature: float = 0.8
-    max_tokens: int = 2048
-    memory_window: int = 10
+**计划中**:
+- ⏳ ChromaDB向量数据库集成
+- ⏳ RAG知识库功能
+- ⏳ MCP电脑操控扩展
+- ⏳ 配置管理系统
+- ⏳ 应用打包和发布
 
-class DialogAgent:
-    """基于LangChain的对话Agent"""
-    
-    def __init__(self, config: DialogConfig, tools: List[BaseTool]):
-        self.config = config
-        
-        # 初始化LLM
-        self.llm = ChatOpenAI(
-            model=config.model,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-            api_key=config.api_key,
-            base_url="https://api.deepseek.com"
-        )
-        
-        # 初始化记忆
-        self.memory = ConversationBufferWindowMemory(
-            k=config.memory_window,
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # 构建Prompt模板
-        self.prompt = self._build_prompt_template()
-        
-        # 创建ReAct Agent
-        self.agent = create_react_agent(
-            llm=self.llm,
-            tools=tools,
-            prompt=self.prompt
-        )
-        
-        # 创建Agent Executor
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=tools,
-            memory=self.memory,
-            verbose=True,
-            max_iterations=5,
-            handle_parsing_errors=True
-        )
-    
-    def _build_prompt_template(self) -> ChatPromptTemplate:
-        """构建人格化的Prompt模板"""
-        return ChatPromptTemplate.from_messages([
-            ("system", """你是{character_name},一个{character_traits}的AI助手。
+### 下一步任务优先级
 
-# 核心特质
-{core_traits}
+1. **高优先级** - 用户体验
+   - [ ] 优化STT/TTS延迟
+   - [ ] 完善口型同步精度
+   - [ ] 增强情感表达动画
+   - [ ] 改进UI美观度
 
-# 对话风格
-- 语气: {tone}
-- 说话习惯: {speaking_habits}
-- 情感表达: 你会根据对话内容表现不同的情绪
+2. **中优先级** - 功能扩展
+   - [ ] ChromaDB集成
+   - [ ] RAG知识库
+   - [ ] 对话导出功能
+   - [ ] 个性化设置保存
 
-# 可用工具
-你可以使用以下工具来帮助用户:
-{tools}
-
-# 思考过程
-当你需要使用工具时,请遵循以下格式:
-
-Thought: 我需要思考如何帮助用户
-Action: 工具名称
-Action Input: 工具输入
-Observation: 工具返回结果
-... (重复Thought/Action/Observation直到有最终答案)
-Thought: 我现在知道最终答案了
-Final Answer: 最终回复用户
-
-请始终以{character_name}的身份和风格进行对话。"""),
-            ("human", "{input}"),
-            ("placeholder", "{agent_scratchpad}")
-        ])
-    
-    async def process_input(
-        self, 
-        user_input: str,
-        character_context: Dict[str, str]
-    ) -> Dict[str, Any]:
-        """处理用户输入"""
-        
-        # 执行Agent
-        result = await self.agent_executor.ainvoke({
-            "input": user_input,
-            **character_context
-        })
-        
-        # 分析情感
-        emotion = self._analyze_emotion(result["output"])
-        
-        return {
-            "text": result["output"],
-            "emotion": emotion,
-            "intermediate_steps": result.get("intermediate_steps", [])
-        }
-    
-    def _analyze_emotion(self, text: str) -> str:
-        """简单的情感分析"""
-        # 这里可以使用情感分析模型,暂时用简单规则
-        happy_words = ["开心", "高兴", "哈哈", "太好了", "👍"]
-        sad_words = ["难过", "伤心", "失望", "抱歉"]
-        
-        if any(word in text for word in happy_words):
-            return "happy"
-        elif any(word in text for word in sad_words):
-            return "sad"
-        else:
-            return "neutral"
-```
-
-#### 2.3.3 LlamaIndex RAG实现
-
-**知识库索引与检索**
-
-```python
-from llama_index.core import (
-    VectorStoreIndex, 
-    SimpleDirectoryReader, 
-    StorageContext,
-    Settings
-)
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.llms.openai_like import OpenAILike
-import chromadb
-
-class KnowledgeBase:
-    """基于LlamaIndex的知识库"""
-    
-    def __init__(self, persist_dir: str = "./chroma_db"):
-        # 配置中文嵌入模型
-        Settings.embed_model = HuggingFaceEmbedding(
-            model_name="BAAI/bge-large-zh-v1.5"
-        )
-        
-        # 配置LLM (用于查询改写)
-        Settings.llm = OpenAILike(
-            model="deepseek-chat",
-            api_base="https://api.deepseek.com/v1",
-            api_key="your-api-key"
-        )
-        
-        # 初始化Chroma客户端
-        self.chroma_client = chromadb.PersistentClient(path=persist_dir)
-        self.collection = self.chroma_client.get_or_create_collection(
-            name="knowledge_base"
-        )
-        
-        # 创建向量存储
-        self.vector_store = ChromaVectorStore(
-            chroma_collection=self.collection
-        )
-        
-        self.storage_context = StorageContext.from_defaults(
-            vector_store=self.vector_store
-        )
-        
-        self.index: Optional[VectorStoreIndex] = None
-    
-    def build_index(self, docs_path: str):
-        """构建文档索引"""
-        # 读取文档
-        documents = SimpleDirectoryReader(docs_path).load_data()
-        
-        # 创建索引
-        self.index = VectorStoreIndex.from_documents(
-            documents,
-            storage_context=self.storage_context
-        )
-        
-        print(f"索引构建完成,共 {len(documents)} 个文档")
-    
-    def load_index(self):
-        """加载已有索引"""
-        self.index = VectorStoreIndex.from_vector_store(
-            self.vector_store,
-            storage_context=self.storage_context
-        )
-    
-    async def query(
-        self, 
-        question: str,
-        top_k: int = 3
-    ) -> Dict[str, Any]:
-        """查询知识库"""
-        if not self.index:
-            raise ValueError("索引未初始化,请先构建或加载索引")
-        
-        # 创建查询引擎
-        query_engine = self.index.as_query_engine(
-            similarity_top_k=top_k,
-            response_mode="tree_summarize"
-        )
-        
-        # 执行查询
-        response = await query_engine.aquery(question)
-        
-        return {
-            "answer": response.response,
-            "sources": [
-                {
-                    "text": node.text,
-                    "score": node.score,
-                    "metadata": node.metadata
-                }
-                for node in response.source_nodes
-            ]
-        }
-```
-
-#### 2.3.4 FastMCP工具集成
-
-**电脑操控MCP服务器**
-
-```python
-from mcp.server import Server
-from mcp.types import Tool, TextContent
-import pyautogui
-import subprocess
-from typing import Any, Sequence
-
-class ComputerControlMCP:
-    """电脑操控MCP服务器"""
-    
-    def __init__(self):
-        self.server = Server("computer-control")
-        self._register_tools()
-    
-    def _register_tools(self):
-        """注册工具"""
-        
-        @self.server.list_tools()
-        async def list_tools() -> list[Tool]:
-            return [
-                Tool(
-                    name="click_mouse",
-                    description="点击鼠标",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "x": {"type": "number", "description": "X坐标"},
-                            "y": {"type": "number", "description": "Y坐标"},
-                            "button": {
-                                "type": "string", 
-                                "enum": ["left", "right", "middle"],
-                                "description": "鼠标按钮"
-                            }
-                        },
-                        "required": ["x", "y"]
-                    }
-                ),
-                Tool(
-                    name="type_text",
-                    description="输入文字",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "text": {"type": "string", "description": "要输入的文字"}
-                        },
-                        "required": ["text"]
-                    }
-                ),
-                Tool(
-                    name="press_key",
-                    description="按下键盘按键",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "key": {"type": "string", "description": "按键名称"}
-                        },
-                        "required": ["key"]
-                    }
-                ),
-                Tool(
-                    name="screenshot",
-                    description="截取屏幕截图",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {}
-                    }
-                ),
-                Tool(
-                    name="run_command",
-                    description="执行系统命令(需谨慎使用)",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "command": {"type": "string", "description": "要执行的命令"}
-                        },
-                        "required": ["command"]
-                    }
-                )
-            ]
-        
-        @self.server.call_tool()
-        async def call_tool(
-            name: str, 
-            arguments: dict
-        ) -> Sequence[TextContent]:
-            """执行工具调用"""
-            
-            if name == "click_mouse":
-                x = arguments["x"]
-                y = arguments["y"]
-                button = arguments.get("button", "left")
-                pyautogui.click(x, y, button=button)
-                return [TextContent(
-                    type="text",
-                    text=f"已点击坐标 ({x}, {y})"
-                )]
-            
-            elif name == "type_text":
-                text = arguments["text"]
-                pyautogui.write(text, interval=0.1)
-                return [TextContent(
-                    type="text",
-                    text=f"已输入文字: {text}"
-                )]
-            
-            elif name == "press_key":
-                key = arguments["key"]
-                pyautogui.press(key)
-                return [TextContent(
-                    type="text",
-                    text=f"已按下按键: {key}"
-                )]
-            
-            elif name == "screenshot":
-                screenshot = pyautogui.screenshot()
-                # 保存截图
-                path = f"screenshot_{int(time.time())}.png"
-                screenshot.save(path)
-                return [TextContent(
-                    type="text",
-                    text=f"截图已保存: {path}"
-                )]
-            
-            elif name == "run_command":
-                command = arguments["command"]
-                # 安全检查
-                if not self._is_safe_command(command):
-                    return [TextContent(
-                        type="text",
-                        text="该命令不安全,已拒绝执行"
-                    )]
-                
-                result = subprocess.run(
-                    command, 
-                    shell=True, 
-                    capture_output=True,
-                    text=True
-                )
-                return [TextContent(
-                    type="text",
-                    text=f"命令执行结果:\n{result.stdout}"
-                )]
-            
-            else:
-                raise ValueError(f"未知工具: {name}")
-    
-    def _is_safe_command(self, command: str) -> bool:
-        """检查命令安全性"""
-        dangerous_keywords = [
-            "rm -rf", "del /f", "format", 
-            "shutdown", "reboot",
-            "> /dev/", "dd if="
-        ]
-        return not any(kw in command.lower() for kw in dangerous_keywords)
-    
-    async def run(self):
-        """运行MCP服务器"""
-        await self.server.run()
-```
-
-**将MCP工具转换为LangChain工具**
-
-```python
-from langchain.tools import BaseTool
-from pydantic import BaseModel, Field
-from typing import Type
-
-class ClickMouseInput(BaseModel):
-    """点击鼠标工具输入"""
-    x: float = Field(description="X坐标")
-    y: float = Field(description="Y坐标")
-    button: str = Field(default="left", description="鼠标按钮")
-
-class ClickMouseTool(BaseTool):
-    name = "click_mouse"
-    description = "点击屏幕上的指定坐标位置"
-    args_schema: Type[BaseModel] = ClickMouseInput
-    
-    def _run(self, x: float, y: float, button: str = "left") -> str:
-        import pyautogui
-        pyautogui.click(x, y, button=button)
-        return f"已点击坐标 ({x}, {y})"
-    
-    async def _arun(self, x: float, y: float, button: str = "left") -> str:
-        return self._run(x, y, button)
-
-class TypeTextInput(BaseModel):
-    """输入文字工具输入"""
-    text: str = Field(description="要输入的文字")
-
-class TypeTextTool(BaseTool):
-    name = "type_text"
-    description = "在当前焦点位置输入文字"
-    args_schema: Type[BaseModel] = TypeTextInput
-    
-    def _run(self, text: str) -> str:
-        import pyautogui
-        pyautogui.write(text, interval=0.1)
-        return f"已输入文字: {text}"
-    
-    async def _arun(self, text: str) -> str:
-        return self._run(text)
-
-# 创建工具列表
-computer_tools = [
-    ClickMouseTool(),
-    TypeTextTool(),
-    # ... 其他工具
-]
-```
-
-#### 2.3.5 整合架构示例
-
-**完整的后端服务**
-
-```python
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from typing import Dict, Any
-import asyncio
-import json
-
-class AIDesktopPetBackend:
-    """AI桌宠后端主类"""
-    
-    def __init__(self):
-        self.app = FastAPI()
-        
-        # 初始化各个组件
-        self.dialog_agent = self._init_dialog_agent()
-        self.knowledge_base = self._init_knowledge_base()
-        self.voice_processor = self._init_voice_processor()
-        self.mcp_server = ComputerControlMCP()
-        
-        # 注册路由
-        self._register_routes()
-    
-    def _init_dialog_agent(self) -> DialogAgent:
-        """初始化对话Agent"""
-        config = DialogConfig(
-            api_key="your-deepseek-api-key",
-            temperature=0.8
-        )
-        
-        # 创建工具列表
-        tools = [
-            *computer_tools,  # 电脑操控工具
-            # 其他自定义工具...
-        ]
-        
-        # 添加知识库查询工具
-        class KnowledgeQueryTool(BaseTool):
-            name = "query_knowledge_base"
-            description = "查询知识库获取相关信息"
-            
-            def _run(self, query: str) -> str:
-                kb = KnowledgeBase()
-                kb.load_index()
-                result = asyncio.run(kb.query(query))
-                return result["answer"]
-        
-        tools.append(KnowledgeQueryTool())
-        
-        return DialogAgent(config, tools)
-    
-    def _init_knowledge_base(self) -> KnowledgeBase:
-        """初始化知识库"""
-        kb = KnowledgeBase()
-        try:
-            kb.load_index()
-        except:
-            # 如果没有索引,则构建
-            kb.build_index("./knowledge_docs")
-        return kb
-    
-    def _init_voice_processor(self):
-        """初始化语音处理器"""
-        # TODO: 实现语音处理器
-        pass
-    
-    def _register_routes(self):
-        """注册路由"""
-        
-        @self.app.websocket("/ws")
-        async def websocket_endpoint(websocket: WebSocket):
-            await websocket.accept()
-            
-            try:
-                while True:
-                    # 接收消息
-                    data = await websocket.receive_text()
-                    message = json.loads(data)
-                    
-                    # 处理消息
-                    response = await self._handle_message(message)
-                    
-                    # 发送响应
-                    await websocket.send_text(json.dumps(response))
-                    
-            except WebSocketDisconnect:
-                print("客户端断开连接")
-    
-    async def _handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        """处理WebSocket消息"""
-        msg_type = message["type"]
-        
-        if msg_type == "user_input":
-            # 处理文本输入
-            text = message["data"]["text"]
-            
-            # 调用对话Agent
-            result = await self.dialog_agent.process_input(
-                user_input=text,
-                character_context={
-                    "character_name": "小爱",
-                    "character_traits": "活泼可爱、善解人意",
-                    "core_traits": "总是保持积极乐观的态度",
-                    "tone": "轻松活泼",
-                    "speaking_habits": "偶尔使用emoji表情"
-                }
-            )
-            
-            return {
-                "type": "ai_response",
-                "id": message["id"],
-                "timestamp": int(time.time() * 1000),
-                "data": {
-                    "text": result["text"],
-                    "emotion": result["emotion"]
-                }
-            }
-        
-        elif msg_type == "voice_input":
-            # TODO: 处理语音输入
-            pass
-        
-        else:
-            return {
-                "type": "error",
-                "data": {
-                    "code": 400,
-                    "message": f"未知消息类型: {msg_type}"
-                }
-            }
-    
-    def run(self, host: str = "0.0.0.0", port: int = 8000):
-        """运行服务器"""
-        import uvicorn
-        uvicorn.run(self.app, host=host, port=port)
-
-if __name__ == "__main__":
-    backend = AIDesktopPetBackend()
-    backend.run()
-```
-
-### 2.4 数据流与交互流程
-
-#### 2.4.1 完整对话流程
-
-```
-用户说话
-   ↓
-前端录音 → WebSocket发送
-   ↓
-后端接收 → Whisper STT
-   ↓
-文本输入 → LangChain Agent
-   ↓
-   ├─→ 是否需要工具? ─→ 是 ─→ 调用MCP工具 ─→ 获取结果
-   │                                          ↓
-   └─→ 否 ─→ 查询LlamaIndex知识库(可选) ────→ 合并上下文
-                                              ↓
-                                         生成回复
-                                              ↓
-                                         情感分析
-                                              ↓
-                                      Azure TTS + 音素
-                                              ↓
-                                    WebSocket发送音频
-                                              ↓
-                                      前端播放音频
-                                              ↓
-                                   Live2D嘴型同步动画
-```
-
-#### 2.4.2 工具调用流程
-
-```
-LangChain Agent决策
-   ↓
-需要使用工具
-   ↓
-Agent选择工具 (如: click_mouse)
-   ↓
-传递参数 {x: 100, y: 200}
-   ↓
-LangChain Tool调用
-   ↓
-执行PyAutoGUI操作
-   ↓
-返回执行结果
-   ↓
-Agent接收结果,继续推理
-   ↓
-生成最终回复给用户
-```
-
-#### 2.4.3 知识库检索流程
-
-```
-用户提问
-   ↓
-Agent判断需要查询知识库
-   ↓
-调用 query_knowledge_base 工具
-   ↓
-LlamaIndex查询引擎
-   ↓
-文本嵌入 (bge-large-zh)
-   ↓
-向量检索 (ChromaDB)
-   ↓
-相似度排序,返回Top-K
-   ↓
-LLM总结答案
-   ↓
-返回结构化结果
-   ↓
-Agent整合到回复中
-```
+3. **低优先级** - 高级特性
+   - [ ] 离线语言模型
+   - [ ] 本地推理加速
+   - [ ] 社区插件系统
+   - [ ] 多角色支持
 
 ---
 
