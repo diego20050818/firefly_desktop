@@ -13,6 +13,53 @@ const EMOTION_TAGS = ['墨镜', '猫耳', '裂开', '鄙夷', '生气', '问号'
 const TAG_BUFFER_MAX = 32;
 let tagBuffer = '';
 
+// ===== 流式 TTS 队列 =====
+let ttsSentenceBuffer = '';  // 积累 token 的缓冲
+const TTS_FLUSH_CHARS = /[。！？!?.…～~\n]/; // 句子边界符
+
+// 收到 token 时调用，攒句子
+function feedTTSBuffer(token) {
+    if (!ttsEnabled) return;
+    ttsSentenceBuffer += token;
+
+    // 检查是否遇到句子边界
+    const match = ttsSentenceBuffer.search(TTS_FLUSH_CHARS);
+    if (match !== -1) {
+        // 截取到边界（含边界符）
+        const sentence = ttsSentenceBuffer.slice(0, match + 1).trim();
+        ttsSentenceBuffer = ttsSentenceBuffer.slice(match + 1); // 剩余留给下一句
+
+        if (sentence) {
+            const clean = filterTags(sentence).replace(/<\/?[^>]+(>|$)/g, '').trim();
+            if (clean) streamTTS(clean);
+        }
+    }
+}
+
+// 流结束时把缓冲里剩余的内容也发出去
+function flushTTSBuffer() {
+    if (!ttsEnabled) return;
+    const sentence = ttsSentenceBuffer.trim();
+    ttsSentenceBuffer = '';
+    if (sentence) {
+        const clean = filterTags(sentence).replace(/<\/?[^>]+(>|$)/g, '').trim();
+        if (clean) streamTTS(clean);
+    }
+}
+
+// 调用流式 TTS 接口
+async function streamTTS(text) {
+    try {
+        await fetch('http://localhost:8000/tts/stream_generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, character_name: "流萤" })
+        });
+    } catch (e) {
+        console.error('Stream TTS failed:', e);
+    }
+}
+
 // ===== 表情包功能 =====
 // 获取表情包列表（通过目录遍历，需服务器支持 directory listing）
 let emojiList = [];
@@ -100,7 +147,10 @@ function addMessage(text, isUser = false, showTimestamp = true) {
 
     // 如果是AI消息且开启了TTS，则请求发音（过滤标签）
     if (!isUser && ttsEnabled && filteredText) {
-        generateTTS(filteredText.replace(/<\/?[^>]+(>|$)/g, ""));
+        // generateTTS(filteredText.replace(/<\/?[^>]+(>|$)/g, ""));
+        if (!isStreaming) {
+            streamTTS(filteredText.replace(/<\/?[^>]+(>|$)/g, '').trim());
+        }
     }
 }
 
@@ -225,7 +275,8 @@ function finalizeAIMessage() {
         // 最终合成时务必过滤标签
         const cleanText = filterTags(currentFullContent).replace(/<\/?[^>]+(>|$)/g, "");
         if (cleanText.trim()) {
-            generateTTS(cleanText);
+            // generateTTS(cleanText);
+            flushTTSBuffer();
         }
     }
     currentAiMessageElement = null;
@@ -347,12 +398,10 @@ function handleWSMessage(data) {
     switch (data.type) {
         case 'token':
             feedTagBuffer(data.content);
+            feedTTSBuffer(data.content);  // 流式tts
             appendTokenToCurrentMessage(data.content);
-            // 模型说话同步
             if (window.chrome && window.chrome.webview) {
                 window.chrome.webview.postMessage("speaking");
-            } else if (typeof speak === 'function') {
-                speak(500);
             }
             break;
         case 'reasoning':
