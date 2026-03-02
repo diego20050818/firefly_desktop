@@ -503,18 +503,37 @@ document.addEventListener('DOMContentLoaded', () => {
         text.textContent = ttsEnabled ? 'TTS ON' : 'TTS OFF';
     });
 
+    const handleNewChat = async () => {
+        try {
+            await fetch(`http://localhost:8000/agent/reset?session_id=${sessionId}`, { method: 'POST' });
+            document.getElementById('messages-container').innerHTML = '';
+            addSystemMessage('对话已重置');
+            closeMenu();
+        } catch (e) {
+            console.error('Reset failed:', e);
+        }
+    };
+
+    // 绑定标题栏的新对话按钮
+    document.getElementById('btn-new-chat-header')?.addEventListener('click', handleNewChat);
+
+    // 绑定设置面板里的原按钮（如果仍然存在）
+    document.getElementById('btn-new-chat')?.addEventListener('click', handleNewChat);
+
     // 侧边栏控制
     const panel = document.getElementById('settings-panel');
     const overlay = document.getElementById('menu-overlay');
 
+    // 侧边栏控制 (现在改为打开独立窗口)
     document.getElementById('open-settings').addEventListener('click', () => {
-        panel.classList.add('open');
-        overlay.classList.add('active');
+        sendModelCommand('open-settings');
     });
 
     const closeMenu = () => {
-        panel.classList.remove('open');
-        overlay.classList.remove('active');
+        const panel = document.getElementById('settings-panel');
+        const overlay = document.getElementById('menu-overlay');
+        panel?.classList.remove('open');
+        overlay?.classList.remove('active');
     };
 
     document.getElementById('close-settings').addEventListener('click', closeMenu);

@@ -56,7 +56,7 @@ tts:
 # -------------------
 # 服务提供商设置
 # -------------------
-default_provider: />deepseek/> # 默认的提供商
+default_provider: deepseek     # 默认的提供商
 providers:
   deepseek:
     enabled: true

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firefly Settings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../../assets/css/main.css">
+    <link rel="stylesheet" href="../../assets/css/setting.css">
+</head>
+
+<body>
+    <div id="drag-handle" class="drag-region"></div>
+    <div id="btn-close" class="close-btn">✕</div>
+
+    <div class="settings-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="px-6 py-4 mb-4">
+                <h1 class="text-xl font-black text-gray-800 tracking-tight">FIREFLY</h1>
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Config Manager</p>
+            </div>
+            <div class="sidebar-item active" data-section="general">
+                通用设置
+            </div>
+            <div class="sidebar-item" data-section="stt">
+                语音转文字 (STT)
+            </div>
+            <div class="sidebar-item" data-section="tts">
+                文本转语音 (TTS)
+            </div>
+            <div class="sidebar-item" data-section="llm">
+                模型服务
+            </div>
+            <div class="sidebar-item" data-section="about">
+                关于
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content-area" id="content-container">
+            <!-- Dynamic Content Here -->
+        </div>
+    </div>
+
+    <script src="../../assets/js/settings.js"></script>
+</body>
+
+</html>
