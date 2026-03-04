@@ -4,7 +4,7 @@ body {
     padding: 10px;
     height: 100vh;
     overflow: hidden;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 .settings-container {
@@ -16,18 +16,6 @@ body {
     overflow: hidden;
     border: 1px solid rgba(0, 0, 0, 0.05);
     box-shadow: 0 1px 10px rgba(0, 0, 0, 0.1);
-    animation: fadeInScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2);
-}
-
-@keyframes fadeInScale {
-    from {
-        opacity: 0;
-        transform: scale(0.95);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
 }
 
 .sidebar {
@@ -43,32 +31,17 @@ body {
 .sidebar-item {
     padding: 12px 24px;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s;
     font-size: 14px;
     color: #4b5563;
     display: flex;
     align-items: center;
     gap: 12px;
-    position: relative;
-    overflow: hidden;
-}
-
-.sidebar-item::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
-    width: 3px;
-    background: #61c0bf;
-    transform: scaleY(0);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-item:hover {
     background: rgba(0, 0, 0, 0.03);
     color: #111827;
-    transform: translateX(4px);
 }
 
 .sidebar-item.active {
@@ -76,11 +49,6 @@ body {
     color: #61c0bf;
     font-weight: 600;
     border-right: 3px solid #61c0bf;
-    transform: translateX(0);
-}
-
-.sidebar-item.active::before {
-    transform: scaleY(1);
 }
 
 .content-area {
@@ -121,18 +89,13 @@ body {
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.05);
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s;
     z-index: 20;
 }
 
 .close-btn:hover {
     background: #ef4444;
     color: white;
-    transform: rotate(90deg) scale(1.1);
-}
-
-.close-btn:active {
-    transform: rotate(90deg) scale(0.95);
 }
 
 /* Form Styles */
@@ -154,7 +117,7 @@ body {
     border-radius: 12px;
     border: 1px solid #e5e7eb;
     font-size: 14px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.2s;
     background: white;
 }
 
@@ -162,11 +125,6 @@ body {
     outline: none;
     border-color: #61c0bf;
     box-shadow: 0 0 0 3px rgba(97, 192, 191, 0.1);
-    transform: translateY(-1px);
-}
-
-.form-input:hover:not(:focus) {
-    border-color: #d1d5db;
 }
 
 .form-switch {
@@ -190,12 +148,8 @@ body {
     right: 0;
     bottom: 0;
     background-color: #e5e7eb;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: .4s;
     border-radius: 24px;
-}
-
-.slider:hover {
-    background-color: #d1d5db;
 }
 
 .slider:before {
@@ -206,25 +160,16 @@ body {
     left: 3px;
     bottom: 3px;
     background-color: white;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: .4s;
     border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 input:checked+.slider {
     background-color: #61c0bf;
 }
 
-input:checked+.slider:hover {
-    background-color: #52b0af;
-}
-
 input:checked+.slider:before {
     transform: translateX(20px);
-}
-
-.form-switch:active .slider:before {
-    width: 22px;
 }
 
 .section-title {
@@ -243,10 +188,4 @@ input:checked+.slider:before {
     padding: 20px;
     border: 1px solid #f3f4f6;
     margin-bottom: 20px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    transform: translateY(-2px);
 }

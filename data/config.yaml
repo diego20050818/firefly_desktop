@@ -62,7 +62,7 @@ providers:
     enabled: true
     api_key: sk-69b1202a3cc64a6f9e2a17e4956bd88c
     base_url: https://api.deepseek.com
-    model: deepseek-chat # 或其他可用模型 deepseek-chat
+    model: deepseek-chat     # 或其他可用模型 deepseek-chat
     timeout: 30
 
   openai:

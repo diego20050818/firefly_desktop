@@ -5,6 +5,8 @@ from loguru import logger
 from pathlib import Path 
 
 from tools.utils import load_config, modify_config
+from tools.config_manager import ConfigManager
+from service.llm_factory import LLMFactory
 
 settingRouter = APIRouter(
     prefix='/settings',
@@ -14,6 +16,17 @@ settingRouter = APIRouter(
 class modifyFomatter(BaseModel):
     key:str
     new_value:Any
+
+
+class SwitchProviderRequest(BaseModel):
+    provider: str
+
+
+class ProviderInfo(BaseModel):
+    name: str
+    model: str
+    enabled: bool
+    is_current: bool
 
 @settingRouter.get('/')
 def load_all_config():
@@ -51,3 +64,71 @@ def modify_settings(modify_data:modifyFomatter):
     if not success:
         raise HTTPException(status_code=500,detail='修改配置项失败')
     return {"message":"配置修改成功","key":modify_data.key,"new_value":modify_data.new_value}
+
+
+@settingRouter.get("/providers")
+async def list_providers():
+    """获取所有可用的提供商列表"""
+    factory = LLMFactory()
+    config_manager = ConfigManager()
+
+    available = factory.get_available_providers()
+    current = factory.get_current_provider()
+
+    providers_info = []
+    for name in available:
+        provider_config = config_manager.get_provider_config(name)
+        if provider_config:
+            providers_info.append({
+                "name": name,
+                "model": provider_config.model,
+                "enabled": provider_config.enabled,
+                "is_current": name == current
+            })
+
+    return {
+        "providers": providers_info,
+        "current": current
+    }
+
+
+@settingRouter.post("/providers/switch")
+async def switch_provider(request: SwitchProviderRequest):
+    """切换到指定的提供商"""
+    try:
+        factory = LLMFactory()
+        new_instance = factory.switch_provider(request.provider)
+
+        return {
+            "success": True,
+            "message": f"已切换到 {request.provider}",
+            "provider": request.provider,
+            "model": new_instance.model
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"切换提供商失败：{e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@settingRouter.get("/config")
+async def get_config():
+    """获取当前配置"""
+    config_manager = ConfigManager()
+    return {
+        "config": config_manager.config,
+        "current_provider": config_manager.get_current_provider()
+    }
+
+
+@settingRouter.post("config/reload")
+async def reload_config():
+    """手动重新加载配置"""
+    config_manager = ConfigManager()
+    success = config_manager.reload_config()
+
+    if success:
+        return {"success": True, "message": "配置已重新加载"}
+    else:
+        raise HTTPException(status_code=500, detail="重新加载配置失败")

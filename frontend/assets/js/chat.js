@@ -17,6 +17,8 @@ let tagBuffer = '';
 let ttsSentenceBuffer = '';  // 积累 token 的缓冲
 const TTS_FLUSH_CHARS = /[。！？!?.…～~\n]/; // 句子边界符
 
+// TODO 需要添加热切换模型和提供商的功能
+
 // 收到 token 时调用，攒句子
 function feedTTSBuffer(token) {
     if (!ttsEnabled) return;
@@ -124,6 +126,15 @@ function filterTags(text) {
     return text.replace(/<\/([^>]+)\/>/g, "");
 }
 
+// 配置 marked 选项以支持代码高亮
+marked.setOptions({
+    highlight: function(code, lang) {
+        return code; // 返回原始代码，由CSS处理样式
+    },
+    breaks: true,
+    gfm: true
+});
+
 // 添加消息到聊天容器
 function addMessage(text, isUser = false, showTimestamp = true) {
     const container = document.getElementById('messages-container');
@@ -134,6 +145,9 @@ function addMessage(text, isUser = false, showTimestamp = true) {
     const filteredText = filterTags(text);
     const markdownContent = marked.parse(filteredText);
     div.innerHTML = `<div class="markdown-content">${markdownContent}</div>`;
+
+    // 为代码块添加语言标签和复制功能
+    enhanceCodeBlocks(div);
 
     if (showTimestamp) {
         const timestamp = document.createElement('div');
@@ -151,6 +165,54 @@ function addMessage(text, isUser = false, showTimestamp = true) {
         if (!isStreaming) {
             streamTTS(filteredText.replace(/<\/?[^>]+(>|$)/g, '').trim());
         }
+    }
+}
+
+// 增强代码块功能
+function enhanceCodeBlocks(element) {
+    const codeBlocks = element.querySelectorAll('pre code');
+    codeBlocks.forEach((block, index) => {
+        const pre = block.parentElement;
+        
+        // 检测语言
+        let language = 'code';
+        const classList = block.className.match(/language-(\w+)/);
+        if (classList && classList[1]) {
+            language = classList[1];
+        }
+        
+        // 添加语言标签
+        pre.setAttribute('data-lang', language);
+        
+        // 添加复制按钮
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'code-copy-btn';
+        copyBtn.innerHTML = '📋';
+        copyBtn.title = '复制代码';
+        copyBtn.onclick = () => copyCodeToClipboard(block, copyBtn);
+        
+        pre.style.position = 'relative';
+        pre.appendChild(copyBtn);
+    });
+}
+
+// 复制代码到剪贴板
+async function copyCodeToClipboard(codeBlock, button) {
+    const code = codeBlock.textContent;
+    try {
+        await navigator.clipboard.writeText(code);
+        button.innerHTML = '(≧∇≦)ﾉ';
+        button.title = '已复制!';
+        setTimeout(() => {
+            button.innerHTML = 'copy';
+            button.title = '复制代码';
+        }, 2000);
+    } catch (err) {
+        console.error('复制失败:', err);
+        button.innerHTML = '＞﹏＜';
+        setTimeout(() => {
+            button.innerHTML = '📋';
+        }, 2000);
     }
 }
 
@@ -266,6 +328,10 @@ function appendTokenToCurrentMessage(token) {
     // 流式渲染时也保持过滤标签
     const filteredDisplay = filterTags(currentFullContent);
     currentAiMessageElement.querySelector('.markdown-content').innerHTML = marked.parse(filteredDisplay);
+    
+    // 为新增的代码块添加增强功能
+    enhanceCodeBlocks(currentAiMessageElement);
+    
     scrollToBottom();
 }
 

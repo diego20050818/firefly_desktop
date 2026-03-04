@@ -9,6 +9,8 @@ from api.app import app
 from tools.launch_app import mcp
 from tools.registry_tools import tool_registry
 from voice.tts_service import tts_service
+from storage.sql import init_db_table
+from tools.config_manager import ConfigManager
 
 async def run_fastapi():
     """运行FastAPI服务"""
@@ -35,7 +37,22 @@ async def load_tts_models():
 
 @logger.catch()
 async def main():
-    # 预加载TTS模型
+    # 初始化数据库表
+    logger.info("Initializing database...")
+    try:
+        init_db_table()
+        logger.success("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        raise
+    
+    # 启动配置管理器
+    logger.info("Starting configuration manager...")
+    config_manager = ConfigManager()
+    config_manager.start_watching(interval=5.0)  # 每 5 秒检查一次配置变化
+    logger.success("Configuration manager started")
+    
+    # 预加载 TTS 模型
     await load_tts_models()
     
     # 并发运行两个服务

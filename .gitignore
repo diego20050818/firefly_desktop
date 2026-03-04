@@ -66,7 +66,10 @@ frontend/firefly_frontend/ipch/
 *.temp
 *~
 .DS_Store
+.db
 *.log
+.VSCodeCounter
+__pycache__/*
 
 # Assets cache
 frontend/assets/cache/
@@ -104,3 +107,5 @@ backend/*.log
 backend/.coverage
 backend/htmlcov/
 backend/.pytest_cache/
+backend/storage/sql/db/user_data.db
+backend/api/__pycache__/app.cpython-311.pyc

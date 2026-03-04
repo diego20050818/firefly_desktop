@@ -1,3 +1,9 @@
+"""大模型对话抽象基类
+
+Returns:
+    _type_: _description_
+    """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, AsyncGenerator, Union
 from dataclasses import dataclass, field

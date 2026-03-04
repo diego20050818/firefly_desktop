@@ -19,6 +19,7 @@ from typing import Any, AsyncGenerator, Optional
 
 from loguru import logger
 
+from service.llm_factory import LLMFactory
 from service.llm_register import get_provider_class
 from service.llm_service import (
     ChatCompletionResponse,
@@ -26,6 +27,14 @@ from service.llm_service import (
     LLMService,
     ToolCall,
 )
+
+from storage.sql import (
+    UserManager,
+    ConversationManager,
+    ToolUsageManager,
+    PreferenceManager
+)
+
 from tools.registry_tools import tool_registry
 
 
@@ -172,9 +181,13 @@ class ChatAgent:
             provider: LLM 服务提供商名称，默认 "deepseek"。
             max_tool_rounds: 最大工具调用轮数，默认 5。
         """
-        # 获取 LLM 服务类并实例化
-        provider_cls = get_provider_class(provider)
-        self.llm_service: LLMService = provider_cls()
+        # 获取 LLM 服务类并实例化(旧版)
+        # provider_cls = get_provider_class(provider)
+        # self.llm_service: LLMService = provider_cls()
+
+        # 使用工厂获取或创建 LLM 服务实例
+        self.factory = LLMFactory()
+        self.llm_service: LLMService = self.factory.get_instance(provider)
 
         # 加载 MCP 工具并转换为 OpenAI Schema
         self.tools_schema = convert_mcp_tools_to_openai_schema()
@@ -182,6 +195,7 @@ class ChatAgent:
 
         logger.info(
             f"ChatAgent 初始化完成 | 提供商: {provider} | "
+            f"模型：{self.llm_service.model}"
             f"可用工具: {len(self.tools_schema)}"
         )
 
