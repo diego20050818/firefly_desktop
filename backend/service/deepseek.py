@@ -186,6 +186,7 @@ class DeepSeekService(LLMService):
             "model": self.model,
             "messages": self.trans_ChatMessage_dict(),
             "stream": True,
+            "stream_options": {"include_usage": True},
             **kwargs
         }
         
@@ -205,6 +206,7 @@ class DeepSeekService(LLMService):
         reasoning_content = None
         collected_tool_calls = []
         finish_reason = None
+        final_usage = {}  # 存储最终的 usage 信息
         
         async for chunk in stream:
             if not chunk.choices:
@@ -243,15 +245,19 @@ class DeepSeekService(LLMService):
                         if tool_call_chunk.function.arguments:
                             collected_tool_calls[tool_call_chunk.index]["function"]["arguments"] += tool_call_chunk.function.arguments
             
-            # 获取结束原因
+            # 检查是否是结束块并包含 usage 信息
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
+            
+            # 检查 chunk 是否包含 usage 信息（通常在最后一个块中）
+            if hasattr(chunk, 'usage') and chunk.usage:
+                final_usage = chunk.usage.model_dump() if hasattr(chunk.usage, 'model_dump') else {}
             
             # 返回当前片段
             yield ChatCompletionResponse(
                 content=delta.content or "",
                 model=chunk.model,
-                usage={},  # 流式模式下通常不包含usage
+                usage={},  # 流式模式下单个片段通常不包含usage
                 finish_reason=choice.finish_reason,
                 tool_calls=None,  # 流式模式下工具调用在最后才完整
                 reasoning_content=delta.reasoning_content if hasattr(delta, 'reasoning_content') else None,
@@ -280,6 +286,10 @@ class DeepSeekService(LLMService):
         )
         
         logger.debug(f"Stream completed. Full content length: {len(full_content)}")
+        
+        # 返回带有完整 usage 信息的最终响应（如果需要）
+        # 注意：这个最终响应不通过 yield 返回，因为流已经结束
+        # 但我们可以在最后的完整响应中使用 final_usage
 
     async def chat(self, **kwargs):
         """交互式聊天循环"""

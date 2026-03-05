@@ -13,7 +13,6 @@ tool_calls 时自动执行对应的 MCP 工具，再将执行结果反馈给 LLM
 
 参考: https://api-docs.deepseek.com/zh-cn/guides/tool_calls
 """
-
 import json
 from typing import Any, AsyncGenerator, Optional
 
@@ -142,6 +141,7 @@ async def execute_tool_call(tool_call: ToolCall) -> str:
         # 若均未找到，则会抛出 ValueError
         result_str = await stdio_mcp_manager.call_tool(func_name, arguments)
         logger.info(f"外部 MCP 工具 {func_name} 执行成功: {result_str[:200]}")
+
         return result_str
 
     except ValueError as e:
@@ -172,8 +172,10 @@ class ChatAgent:
 
     def __init__(
         self,
+        user_id:str = 'default_user',
         provider: str = "deepseek",
         max_tool_rounds: int = 5,
+        session_id:str|None = None,
     ) -> None:
         """初始化 ChatAgent。
 
@@ -186,6 +188,19 @@ class ChatAgent:
         # self.llm_service: LLMService = provider_cls()
 
         # 使用工厂获取或创建 LLM 服务实例
+        import uuid
+        self.session_id = session_id or str(uuid.uuid4())
+        self.user_id = user_id
+        
+        # 初始化用户（如果不存在的话）
+        user_info = UserManager.get_user(self.user_id)
+        if not user_info:
+            UserManager.create_user(self.user_id)
+        
+        # 更新用户最后活跃时间
+        UserManager.update_last_active(self.user_id)
+        
+        # 获取LLM服务实例
         self.factory = LLMFactory()
         self.llm_service: LLMService = self.factory.get_instance(provider)
 
@@ -195,7 +210,8 @@ class ChatAgent:
 
         logger.info(
             f"ChatAgent 初始化完成 | 提供商: {provider} | "
-            f"模型：{self.llm_service.model}"
+            f"模型：{self.llm_service.model} | "
+            f"用户: {self.user_id} | 会话: {self.session_id} | "
             f"可用工具: {len(self.tools_schema)}"
         )
 
@@ -219,6 +235,14 @@ class ChatAgent:
         """
         tool_calls_history = []
 
+        # 保存用户消息到对话历史
+        ConversationManager.save_message(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            role="user",
+            content=user_prompt
+        )
+
         # 第一轮: 带工具列表调用 LLM
         response = await self.llm_service.chat_completion(
             user_prompt=user_prompt,
@@ -234,6 +258,17 @@ class ChatAgent:
                 "usage": {},
             }
 
+        # 保存助手的初始回复（可能包含工具调用）
+        ConversationManager.save_message(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            role="assistant",
+            content=response.content if response.content else "",
+            tool_calls=response.tool_calls,
+            reasoning_content=response.reasoning_content,
+            usage=response.usage if response.usage is not None else {}  # 确保不是 None
+        )
+
         # 工具调用循环
         round_count = 0
         while (
@@ -246,14 +281,35 @@ class ChatAgent:
 
             # 逐个执行工具调用
             for tc in response.tool_calls:
+                start_time = __import__('time').time()
+                
                 tool_result = await execute_tool_call(tc)
+                
+                # 计算工具执行耗时
+                duration = round((__import__('time').time() - start_time) * 1000)  # 转换为毫秒
+                
+                # 记录工具使用情况
+                tool_name = tc.function.get("name", "")
+                arguments = json.loads(tc.function.get("arguments", "{}"))
+                success = not tool_result.startswith(("错误", "异常", "警告", "ValueError"))
+                
+                ToolUsageManager.log_tool_usage(
+                    session_id=self.session_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    result=tool_result,
+                    duration_ms=duration,
+                    success=success
+                )
 
                 # 记录工具调用历史
                 tool_calls_history.append({
-                    "tool_name": tc.function.get("name", ""),
-                    "arguments": tc.function.get("arguments", "{}"),
+                    "tool_name": tool_name,
+                    "arguments": arguments,
                     "result": tool_result,
                     "round": round_count,
+                    "duration_ms": duration,
+                    "success": success
                 })
 
                 # 将工具结果以 role='tool' 的消息追加到对话历史
@@ -264,6 +320,22 @@ class ChatAgent:
                         content=tool_result,
                         tool_call_id=tc.id,
                     )
+                )
+                
+                # 保存工具执行结果到对话历史
+                ConversationManager.save_message(
+                    session_id=self.session_id,
+                    user_id=self.user_id,
+                    role="tool",
+                    content=tool_result,
+                    tool_calls=[{
+                        "id": tc.id,
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(arguments)
+                        }
+                    }],
+                    usage={}  # 工具结果通常没有 usage 信息
                 )
 
             # 以更新后的 messages 再次调用 LLM（不再传 tools，等待最终回复）
@@ -276,6 +348,17 @@ class ChatAgent:
             if response is None:
                 logger.error("工具反馈后 LLM 返回空响应")
                 break
+                
+            # 保存助手的新回复（可能是最终回复或新的工具调用）
+            ConversationManager.save_message(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                role="assistant",
+                content=response.content if response.content else "",
+                tool_calls=response.tool_calls,
+                reasoning_content=response.reasoning_content,
+                usage=response.usage if response.usage is not None else {}  # 确保不是 None
+            )
 
         # 返回最终结果
         return {
@@ -284,7 +367,9 @@ class ChatAgent:
             "reasoning_content": (
                 response.reasoning_content if response else None
             ),
-            "usage": response.usage if response else {},
+            "usage": response.usage if response and response.usage is not None else {},
+            "session_id": self.session_id,
+            "user_id": self.user_id,
         }
 
     async def _call_llm_without_new_user_msg(
@@ -362,7 +447,7 @@ class ChatAgent:
                 usage=(
                     api_response.usage.model_dump()
                     if api_response.usage else {}
-                ),
+                ),  # 确保 usage 不是 None
                 finish_reason=choice.finish_reason,
                 tool_calls=tool_calls_data,
                 reasoning_content=reasoning,
@@ -422,6 +507,9 @@ class ChatAgent:
         else:
             self.llm_service.message = []
             logger.info("对话历史已清空")
+            
+        # 清空会话历史
+        ConversationManager.clear_session(self.session_id)
 
     # ================================================================
     # 流式对话 API
@@ -454,6 +542,14 @@ class ChatAgent:
         self.llm_service.message.append(
             ChatMessage.create_text("user", user_prompt)
         )
+        
+        # 保存用户消息到对话历史
+        ConversationManager.save_message(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            role="user",
+            content=user_prompt
+        )
 
         # 第一轮：流式调用 LLM（附带工具列表）
         stream_result = await self._stream_llm_call(
@@ -473,6 +569,18 @@ class ChatAgent:
         full_content = result["full_content"]
         reasoning_content = result["reasoning_content"]
         finish_reason = result["finish_reason"]
+        
+        
+        # 保存助手的初始回复（可能包含工具调用）
+        ConversationManager.save_message(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            role="assistant",
+            content=full_content,
+            tool_calls=collected_tool_calls,
+            reasoning_content=reasoning_content,
+            usage=result["usage"]  # 使用从 result 容器中提取的完整 usage 信息
+        )
 
         # 工具调用循环
         round_count = 0
@@ -490,6 +598,8 @@ class ChatAgent:
             for tc in collected_tool_calls:
                 tool_name = tc.function.get("name", "")
                 tool_args = tc.function.get("arguments", "{}")
+                
+                start_time = __import__('time').time()
 
                 # 通知前端：工具开始执行
                 yield {
@@ -500,6 +610,22 @@ class ChatAgent:
 
                 # 执行工具
                 tool_result = await execute_tool_call(tc)
+                
+                # 计算工具执行耗时
+                duration = round((__import__('time').time() - start_time) * 1000)  # 转换为毫秒
+                
+                # 记录工具使用情况
+                arguments = json.loads(tool_args)
+                success = not tool_result.startswith(("错误", "异常", "警告", "ValueError"))
+                
+                ToolUsageManager.log_tool_usage(
+                    session_id=self.session_id,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    result=tool_result,
+                    duration_ms=duration,
+                    success=success
+                )
 
                 # 通知前端：工具执行完成
                 yield {
@@ -511,9 +637,11 @@ class ChatAgent:
                 # 记录历史
                 tool_calls_history.append({
                     "tool_name": tool_name,
-                    "arguments": tool_args,
+                    "arguments": arguments,
                     "result": tool_result,
                     "round": round_count,
+                    "duration_ms": duration,
+                    "success": success
                 })
 
                 # 将工具结果追加到对话消息
@@ -523,6 +651,22 @@ class ChatAgent:
                         content=tool_result,
                         tool_call_id=tc.id,
                     )
+                )
+                
+                # 保存工具执行结果到对话历史
+                ConversationManager.save_message(
+                    session_id=self.session_id,
+                    user_id=self.user_id,
+                    role="tool",
+                    content=tool_result,
+                    tool_calls=[{
+                        "id": tc.id,
+                        "function": {
+                            "name": tool_name,
+                            "arguments": tool_args
+                        }
+                    }],
+                    usage={}  # 工具结果通常没有 usage 信息
                 )
 
             # 再次流式调用 LLM（工具反馈后）
@@ -542,6 +686,17 @@ class ChatAgent:
             full_content = result["full_content"]
             reasoning_content = result["reasoning_content"]
             finish_reason = result["finish_reason"]
+            
+            # 保存助手的新回复（可能是最终回复或新的工具调用）
+            ConversationManager.save_message(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                role="assistant",
+                content=full_content,
+                tool_calls=collected_tool_calls,
+                reasoning_content=reasoning_content,
+                usage=result["usage"]  # 使用从 result 容器中提取的完整 usage 信息
+            )
 
         # 最终完成事件
         yield {
@@ -549,35 +704,18 @@ class ChatAgent:
             "full_content": full_content,
             "tool_calls_history": tool_calls_history,
             "reasoning_content": reasoning_content,
+            "session_id": self.session_id,
+            "user_id": self.user_id,
         }
 
+    # 修改 _stream_llm_call 方法，使其返回完整的 usage 信息
     async def _stream_llm_call(
         self,
         tools: Optional[list[dict]] = None,
         yield_tokens: bool = True,
         add_user_msg: bool = False,
     ) -> dict[str, Any]:
-        """执行一次流式 LLM 调用，收集所有 token 和 tool_calls。
-
-        该方法返回一个字典，其中 "stream" 是异步生成器（yield token事件），
-        其余字段在流结束后填充完整结果。
-
-        为了同时支持「实时推送 token」和「收集完整结果」，
-        使用了内部异步队列 + 后台任务的模式。
-
-        Args:
-            tools: 可选的工具定义列表。
-            yield_tokens: 是否 yield token 事件。
-            add_user_msg: 保留参数（此层不添加用户消息）。
-
-        Returns:
-            字典包含:
-            - stream: 异步生成器，yield token/reasoning 事件
-            - tool_calls: 完成后的 ToolCall 列表
-            - full_content: 完整文本内容
-            - reasoning_content: 完整推理内容
-            - finish_reason: 结束原因
-        """
+        """执行一次流式 LLM 调用，收集所有 token 和 tool_calls。"""
         import asyncio
 
         # 用队列在流式消费和结果收集之间传递数据
@@ -589,6 +727,7 @@ class ChatAgent:
             "full_content": "",
             "reasoning_content": None,
             "finish_reason": None,
+            "usage": {}  # 添加 usage 字段
         }
 
         async def _producer() -> None:
@@ -598,6 +737,7 @@ class ChatAgent:
                 "model": self.llm_service.model,
                 "messages": messages,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
 
             if tools:
@@ -612,6 +752,7 @@ class ChatAgent:
                 reasoning_content: Optional[str] = None
                 collected_tool_calls: list[dict[str, Any]] = []
                 finish_reason = None
+                usage_info = {}  # 用于存储 usage 信息
 
                 async for chunk in stream:
                     if not chunk.choices:
@@ -660,6 +801,10 @@ class ChatAgent:
 
                     if choice.finish_reason:
                         finish_reason = choice.finish_reason
+                    
+                    # 检查是否有 usage 信息（通常在最后一个块中）
+                    if hasattr(chunk, 'usage') and chunk.usage:
+                        usage_info = chunk.usage.model_dump() if hasattr(chunk.usage, 'model_dump') else {}
 
                 # 构建 ToolCall 列表
                 tool_calls_data = [
@@ -685,6 +830,7 @@ class ChatAgent:
                 result_container["full_content"] = full_content
                 result_container["reasoning_content"] = reasoning_content
                 result_container["finish_reason"] = finish_reason
+                result_container["usage"] = usage_info  # 存储 usage 信息
 
             except Exception as e:
                 import traceback
@@ -714,6 +860,7 @@ class ChatAgent:
             "full_content": result_container["full_content"],
             "reasoning_content": result_container["reasoning_content"],
             "finish_reason": result_container["finish_reason"],
+            "usage": result_container["usage"],  # 添加 usage 信息
             "_task": producer_task,
             "_result": result_container,
         }

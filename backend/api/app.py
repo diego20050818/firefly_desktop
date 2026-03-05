@@ -26,6 +26,7 @@ from api.agent.agent_router import agent_router
 from api.tools.tools_router import tools_router
 from api.stt.stt_router import stt_router
 from api.tts.tts_router import tts_router
+from api.data_manager.sql_router import sqlRouter
 
 from tools.registry_tools import tool_registry
 from voice.tts_service import tts_service
@@ -33,7 +34,6 @@ from voice.tts_service import tts_service
 
 # ===================== 设置全局变量 =====================
 # stt_service = STTService()
-
 # ===================== 应用初始化 =====================
 
 @asynccontextmanager
@@ -107,6 +107,7 @@ app.include_router(agent_router)
 app.include_router(tools_router)
 app.include_router(stt_router)
 app.include_router(tts_router)
+app.include_router(sqlRouter)
 
 # ===================== 基础端点 =====================
 
@@ -120,13 +121,10 @@ async def read_root() -> dict:
         "version": "0.0.1",
     }
 
-
 @app.get("/health")
 async def health_check() -> dict:
     """健康检查端点。"""
     return {"status": "ok"}
-
-
 
 @app.get("/emoji/list")
 def list_emojis():

@@ -3,14 +3,17 @@ from loguru import logger
 import uvicorn
 import os
 import subprocess
+from pathlib import Path
 
 from service.llm_register import get_provider_class
 from api.app import app
 from tools.launch_app import mcp
 from tools.registry_tools import tool_registry
 from voice.tts_service import tts_service
-from storage.sql import init_db_table
+from storage.sql import init_db_table,DatabaseManager
 from tools.config_manager import ConfigManager
+
+DATA_BASE_PATH = Path.cwd() / 'storage' / 'sql' / 'db' / 'user_data.db'
 
 async def run_fastapi():
     """运行FastAPI服务"""
@@ -40,7 +43,13 @@ async def main():
     # 初始化数据库表
     logger.info("Initializing database...")
     try:
-        init_db_table()
+        
+        if not DATA_BASE_PATH.exists():
+            init_db_table()
+            
+        database_manager = DatabaseManager()
+        database_manager.get_connection()
+
         logger.success("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")

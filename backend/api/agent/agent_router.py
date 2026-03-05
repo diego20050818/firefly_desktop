@@ -60,6 +60,7 @@ async def agent_chat_endpoint(request: AgentChatRequest) -> dict:
     if session_id not in active_agent_sessions:
         try:
             active_agent_sessions[session_id] = ChatAgent(
+                session_id=session_id,  # 明确传递session_id
                 provider=request.provider
             )
             logger.info(f"创建新的 Agent 会话: {session_id}")
@@ -127,6 +128,7 @@ async def agent_stream_chat_endpoint(request: AgentChatRequest):
     if session_id not in active_agent_sessions:
         try:
             active_agent_sessions[session_id] = ChatAgent(
+                session_id=session_id,  # 明确传递session_id
                 provider=request.provider
             )
             logger.info(f"创建新的 Agent 流式会话: {session_id}")
@@ -177,7 +179,7 @@ async def websocket_agent_chat(websocket: WebSocket) -> None:
 
     服务端逐 token 推送:
         {"type": "token", "content": "你"}
-        {"type": "reasoning", "content": "..."}
+        {"type": "reasoning", "content": "让我想想..."}
         {"type": "tool_start", "tool_name": "add", "arguments": "..."}
         {"type": "tool_end", "tool_name": "add", "result": "42"}
         {"type": "done", "full_content": "...", "tool_calls_history": [...]}
@@ -199,7 +201,10 @@ async def websocket_agent_chat(websocket: WebSocket) -> None:
 
                 # 初始化 Agent（首次消息时，后续复用实现多轮对话）
                 if agent is None:
-                    agent = ChatAgent(provider=provider)
+                    agent = ChatAgent(
+                        session_id=session_id,  # 传递WebSocket的session_id
+                        provider=provider
+                    )
 
                 # 流式推送每个事件
                 async for event in agent.stream_chat(user_text):

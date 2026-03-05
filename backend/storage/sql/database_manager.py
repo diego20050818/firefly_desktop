@@ -7,15 +7,14 @@ import threading
 from loguru import logger
 from .sql_init import DB_PATH
 
+
 class DatabaseManager:
-    """数据库管理器 - 单例模式
+    """数据库管理器 - 单例模式，支持线程安全的连接访问
     
-    负责管理数据库连接，确保整个应用只有一个连接实例
-    支持线程安全的连接访问
+    负责管理数据库连接，每个线程都有自己的连接实例
     """
     _instance = None
     _lock = threading.Lock()
-    _connection = None
 
     def __new__(cls):
         """创建并返回对象实例，使用双重检查锁保证线程安全"""
@@ -25,38 +24,36 @@ class DatabaseManager:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
+    def __init__(self):
+        """初始化线程本地存储"""
+        self._local = threading.local()
+
     def get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接
+        """获取当前线程的数据库连接
         
         Returns:
-            sqlite3.Connection: 数据库连接对象
+            sqlite3.Connection: 当前线程的数据库连接对象
         """
-        if self._connection is None:
-            self._connection = sqlite3.connect(DB_PATH)
-            self._connection.row_factory = sqlite3.Row  # 支持字典访问
-        return self._connection
-    
-    def commit_tasks(self):
-        if self._connection:
-            self._connection.commit()
+        if not hasattr(self._local, 'connection'):
+            self._local.connection = sqlite3.connect(DB_PATH)
+            self._local.connection.row_factory = sqlite3.Row  # 支持字典访问
+        return self._local.connection
 
-    def close_connection(self) -> bool:
-        """关闭数据库连接
-        
-        Returns:
-            bool: 是否成功关闭
-        """
-        try:
-            if self._connection:
-                self._connection.commit()
-                self._connection.close()
-                self._connection = None
-            logger.success('close database success')
-            return True
+    def close_connection(self):
+        """关闭当前线程的数据库连接"""
+        if hasattr(self._local, 'connection'):
+            self._local.connection.close()
+            delattr(self._local, 'connection')
 
-        except Exception as e:
-            logger.error(f'failed to close database:{e}')
-            return False
+    def commit(self):
+        """提交当前线程的事务"""
+        if hasattr(self._local, 'connection'):
+            self._local.connection.commit()
+
+    def rollback(self):
+        """回滚当前线程的事务"""
+        if hasattr(self._local, 'connection'):
+            self._local.connection.rollback()
 
 def clear_database(keep_users: bool = False):
     """清空数据库
