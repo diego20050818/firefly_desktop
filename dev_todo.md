@@ -71,7 +71,6 @@ optim
 - [x] 重复气泡输出
 - [x] 思考部分流式调用组件问题
 - [x] 后端 LLM tags 触发动作（缓存机制，格式 `</emotion/>` 不渲染至前端）
-- [x] 鼠标触发随机 spatial 动作
 - [x] 恢复 idle 默认动作异常
 
 </details>
